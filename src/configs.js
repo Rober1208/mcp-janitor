@@ -6,17 +6,26 @@ import path from 'node:path';
  * The stdio MCP servers that agents on this machine are configured to start:
  * [{ agent, name, command, args, source }]. Servers reached by URL start no
  * local process and are left out. Disabled servers are kept: conversations
- * that started before a server was disabled still run it.
+ * that started before a server was disabled still run it. With `sources`, an
+ * array, each file read is reported in it: { agent, file, servers, error }.
  */
-export function configuredServers({ env = process.env, home = os.homedir(), platform = process.platform } = {}) {
+export function configuredServers({ env = process.env, home = os.homedir(), platform = process.platform, sources = null } = {}) {
   const servers = [];
   const add = (agent, source, entries, variables = {}) => {
     if (!entries || typeof entries !== 'object') return;
+    const before = servers.length;
     for (const [name, entry] of Object.entries(entries)) {
       if (!entry || typeof entry.command !== 'string' || !entry.command || entry.url) continue;
       const expand = text => expandVariables(String(text), variables, env);
       servers.push({ agent, name, command: expand(entry.command), args: Array.isArray(entry.args) ? entry.args.map(expand) : [], source });
     }
+    sources?.push({ agent, file: source, servers: servers.length - before, error: null });
+  };
+  // A JSON file; one that is there but cannot be read is reported.
+  const json = (agent, file) => {
+    const text = read(file);
+    if (text === null) return null;
+    try { return parseJson(text); } catch (error) { sources?.push({ agent, file, servers: 0, error: error.message }); return null; }
   };
   const appConfig = name => platform === 'win32' ? path.join(env.APPDATA || path.join(home, 'AppData', 'Roaming'), name)
     : platform === 'darwin' ? path.join(home, 'Library', 'Application Support', name)
@@ -28,26 +37,26 @@ export function configuredServers({ env = process.env, home = os.homedir(), plat
   const toml = read(codexToml);
   if (toml !== null) add('Codex', codexToml, codexServers(toml));
   for (const file of [...findFiles(path.join(codexHome, 'plugins'), '.mcp.json', 7), ...findFiles(path.join(codexHome, '.tmp'), '.mcp.json', 7)]) {
-    add('Codex', file, serverMap(readJson(file)));
+    add('Codex', file, serverMap(json('Codex', file)));
   }
 
   // Claude Code: user and project servers, project .mcp.json files, plugins.
   const claudeDir = env.CLAUDE_CONFIG_DIR || path.join(home, '.claude');
   const claudeJson = env.CLAUDE_CONFIG_DIR ? path.join(env.CLAUDE_CONFIG_DIR, '.claude.json') : path.join(home, '.claude.json');
-  const claude = readJson(claudeJson);
+  const claude = json('Claude Code', claudeJson);
   if (claude) {
-    add('Claude Code', claudeJson, claude.mcpServers);
+    add('Claude Code', claudeJson, claude.mcpServers ?? {});
     for (const [project, settings] of Object.entries(claude.projects ?? {})) {
       add('Claude Code', claudeJson, settings?.mcpServers);
       const projectFile = path.join(project, '.mcp.json');
-      add('Claude Code', projectFile, serverMap(readJson(projectFile)));
+      add('Claude Code', projectFile, serverMap(json('Claude Code', projectFile)));
     }
   }
   for (const file of findFiles(path.join(claudeDir, 'plugins'), '.mcp.json', 7)) {
-    add('Claude Code', file, serverMap(readJson(file)), { CLAUDE_PLUGIN_ROOT: path.dirname(file) });
+    add('Claude Code', file, serverMap(json('Claude Code', file)), { CLAUDE_PLUGIN_ROOT: path.dirname(file) });
   }
   for (const file of findFiles(path.join(claudeDir, 'plugins'), 'plugin.json', 8)) {
-    const servers_ = readJson(file)?.mcpServers;
+    const servers_ = json('Claude Code', file)?.mcpServers;
     if (servers_ && typeof servers_ === 'object') add('Claude Code', file, servers_, { CLAUDE_PLUGIN_ROOT: path.dirname(path.dirname(file)) });
   }
 
@@ -61,26 +70,26 @@ export function configuredServers({ env = process.env, home = os.homedir(), plat
   }
   for (const dir of desktopDirs) {
     const file = path.join(dir, 'claude_desktop_config.json');
-    add('Claude Desktop', file, readJson(file)?.mcpServers);
+    add('Claude Desktop', file, json('Claude Desktop', file)?.mcpServers);
     for (const manifest of findFiles(path.join(dir, 'Claude Extensions'), 'manifest.json', 2)) {
-      const json = readJson(manifest);
-      if (json?.server?.mcp_config) {
-        add('Claude Desktop', manifest, { [json.name || path.basename(path.dirname(manifest))]: json.server.mcp_config }, { __dirname: path.dirname(manifest) });
+      const extension = json('Claude Desktop', manifest);
+      if (extension?.server?.mcp_config) {
+        add('Claude Desktop', manifest, { [extension.name || path.basename(path.dirname(manifest))]: extension.server.mcp_config }, { __dirname: path.dirname(manifest) });
       }
     }
   }
 
   // Other agents that keep MCP servers in the same { name: { command, args } } form.
-  add('Cursor', path.join(home, '.cursor', 'mcp.json'), serverMap(readJson(path.join(home, '.cursor', 'mcp.json'))));
-  add('Gemini CLI', path.join(home, '.gemini', 'settings.json'), readJson(path.join(home, '.gemini', 'settings.json'))?.mcpServers);
+  add('Cursor', path.join(home, '.cursor', 'mcp.json'), serverMap(json('Cursor', path.join(home, '.cursor', 'mcp.json'))));
+  add('Gemini CLI', path.join(home, '.gemini', 'settings.json'), json('Gemini CLI', path.join(home, '.gemini', 'settings.json'))?.mcpServers);
   for (const product of ['Code', 'Code - Insiders']) {
     const user = path.join(appConfig(product), 'User');
-    add('VS Code', path.join(user, 'mcp.json'), serverMap(readJson(path.join(user, 'mcp.json'))));
-    add('VS Code', path.join(user, 'settings.json'), readJson(path.join(user, 'settings.json'))?.mcp?.servers);
+    add('VS Code', path.join(user, 'mcp.json'), serverMap(json('VS Code', path.join(user, 'mcp.json'))));
+    add('VS Code', path.join(user, 'settings.json'), json('VS Code', path.join(user, 'settings.json'))?.mcp?.servers);
   }
 
   // Anything else, in the same { "mcpServers": { ... } } shape.
-  if (env.MCP_JANITOR_SERVERS) add('Other', env.MCP_JANITOR_SERVERS, serverMap(readJson(env.MCP_JANITOR_SERVERS)));
+  if (env.MCP_JANITOR_SERVERS) add('Other', env.MCP_JANITOR_SERVERS, serverMap(json('Other', env.MCP_JANITOR_SERVERS)));
   return servers;
 }
 
@@ -115,9 +124,13 @@ function list(dir) {
 export function readJson(file) {
   const text = read(file);
   if (text === null) return null;
+  try { return parseJson(text); } catch { return null; }
+}
+
+function parseJson(text) {
   const clean = text.replace(/^\uFEFF/, '');
   try { return JSON.parse(clean); } catch {}
-  try { return JSON.parse(stripJsonComments(clean)); } catch { return null; }
+  return JSON.parse(stripJsonComments(clean));
 }
 
 function stripJsonComments(text) {

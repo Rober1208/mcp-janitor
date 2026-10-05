@@ -142,6 +142,46 @@ async function openCodex(env, home) {
   };
 }
 
+/**
+ * Whether the files that name conversations can be read, for `doctor`:
+ * [{ agent, ok (true, false, or null when there is nothing to read), detail }].
+ * The queries use the columns that conversation names depend on, so a change
+ * in an agent's own format shows here.
+ */
+export async function conversationSources({ env = process.env, home = os.homedir() } = {}) {
+  const results = [];
+  const claudeDir = path.join(env.CLAUDE_CONFIG_DIR || path.join(home, '.claude'), 'sessions');
+  const sessions = list(claudeDir).filter(name => /^\d+\.json$/.test(name)).length;
+  results.push(sessions
+    ? { agent: 'Claude Code', ok: true, detail: `${claudeDir} (${sessions} session${sessions === 1 ? '' : 's'})` }
+    : { agent: 'Claude Code', ok: null, detail: `no sessions recorded in ${claudeDir}` });
+  const codexDir = env.CODEX_HOME || path.join(home, '.codex');
+  const Database = await sqlite();
+  if (!Database) {
+    results.push({ agent: 'Codex', ok: false, detail: `conversation names need Node.js 22.13 or later; this is ${process.version}` });
+    return results;
+  }
+  const checks = [
+    ['state', 'select id, title, source, created_at_ms, updated_at_ms from threads limit 1'],
+    ['logs', 'select ts, ts_nanos, thread_id, process_uuid, feedback_log_body from logs limit 1'],
+  ];
+  for (const [kind, sql] of checks) {
+    const file = newest(codexDir, new RegExp(`^${kind}_(\\d+)\\.sqlite$`));
+    if (!file) {
+      results.push({ agent: 'Codex', ok: null, detail: `no ${kind}_<n>.sqlite in ${codexDir}` });
+      continue;
+    }
+    try {
+      const db = new Database(file, { readOnly: true });
+      try { db.prepare(sql).all(); } finally { db.close(); }
+      results.push({ agent: 'Codex', ok: true, detail: file });
+    } catch (error) {
+      results.push({ agent: 'Codex', ok: false, detail: `${file}: ${error.message}` });
+    }
+  }
+  return results;
+}
+
 // node:sqlite is built into Node.js 22.13 and later. It announces itself as
 // experimental, which is noise for the people using this tool.
 async function sqlite() {

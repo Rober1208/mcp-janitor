@@ -3,9 +3,9 @@ import os from 'node:os';
 import path from 'node:path';
 import readline from 'node:readline/promises';
 import { configuredServers } from './configs.js';
-import { describeConversations } from './conversations.js';
+import { conversationSources, describeConversations } from './conversations.js';
 import { snapshot, stopProcesses } from './processes.js';
-import { AGENT_NAMES, findCopies, markLatest } from './scan.js';
+import { AGENT_NAMES, agentOf, findCopies, latestGroup, markLatest } from './scan.js';
 import { loadState, stateFile, track } from './state.js';
 
 const HELP = `mcp-janitor: see which MCP servers your AI agents keep running, and stop the idle ones.
@@ -16,13 +16,14 @@ Usage:
   mcp-janitor stop <pid>...      Stop these servers (PIDs from the list)
   mcp-janitor stop --idle 1h     Stop servers idle for an hour or more
   mcp-janitor watch --idle 1h    Keep checking, and stop servers once idle that long
+  mcp-janitor doctor             Check what mcp-janitor can read on this machine
 
 Options:
   --idle <time>       How long a server must be idle, such as 30m, 2h or 1d
   --orphans           Only servers seen with an agent that has since exited
   --server <name>     Only servers with this name
   --agent <name>      Only servers of this agent, such as codex or "claude code"
-  --include-latest    Also stop servers of each app's latest conversation
+  --include-latest    Also stop servers of the conversations you used last
   --every <time>      How often watch checks (default 1m)
   --dry-run           Show what would be stopped, and stop nothing
   -y, --yes           Do not ask before stopping
@@ -61,7 +62,7 @@ export function parseArgs(argv) {
       throw new UsageError(`Unknown option ${arg}.`);
     } else if (/^\d+$/.test(arg) && options.command === 'stop') {
       options.pids.push(Number(arg));
-    } else if (i === 0 && ['list', 'stop', 'watch'].includes(arg)) {
+    } else if (i === 0 && ['list', 'stop', 'watch', 'doctor'].includes(arg)) {
       options.command = arg;
     } else {
       throw new UsageError(`Unexpected argument ${arg}.`);
@@ -127,11 +128,14 @@ function style(enabled) {
   return { bold: wrap(1, 22), dim: wrap(2, 22), yellow: wrap(33, 39), green: wrap(32, 39) };
 }
 
+// The home folder as the environment gives it, as Node.js would read it.
+const homeOf = env => (process.platform === 'win32' ? env.USERPROFILE : env.HOME) || os.homedir();
+const extraAgentsOf = env => (env.MCP_JANITOR_AGENTS ? new RegExp(env.MCP_JANITOR_AGENTS, 'i') : null);
+
 /** Look at the machine: the servers, their agents and conversations, and how long each has been idle. */
 export async function check({ env = process.env, now = Date.now() } = {}) {
-  // The home folder as the environment gives it, as Node.js would read it.
-  const home = (process.platform === 'win32' ? env.USERPROFILE : env.HOME) || os.homedir();
-  const extraAgents = env.MCP_JANITOR_AGENTS ? new RegExp(env.MCP_JANITOR_AGENTS, 'i') : null;
+  const home = homeOf(env);
+  const extraAgents = extraAgentsOf(env);
   const file = stateFile({ env, home });
   const before = loadState(file);
   const copies = findCopies(snapshot(), configuredServers({ env, home }), { extraAgents, known: before });
@@ -158,7 +162,7 @@ function filtered(copies, options) {
 }
 
 // Servers that may be stopped for being idle: measured at least twice, so
-// that work between the checks shows; not of an app's latest conversation
+// that work between the checks shows; not of a conversation used last
 // unless asked; and orphans only when they were seen with their agent.
 function idleOnes(copies, options) {
   return filtered(copies, options).filter(copy => copy.measured && copy.idleMs !== null && copy.idleMs >= options.idleMs
@@ -196,9 +200,8 @@ export function render(copies, { color = false, numbered = false } = {}) {
   const rank = key => ({ orphans: 1, suspects: 2 })[key] ?? 0;
   const ordered = [...groups.entries()].sort(([a], [b]) => rank(a) - rank(b) || a.localeCompare(b));
   const nameWidth = Math.max(6, ...copies.map(copy => width(copy.name)));
-  // "(latest)" marks the conversation kept when others of the same app are not.
-  const app = copy => `${copy.agent}|${copy.host ?? ''}`;
-  const olderInApp = new Set(copies.filter(copy => !copy.orphan && !copy.latest).map(app));
+  // "(latest)" marks the conversation kept while others it competes with are not.
+  const olderInGroup = new Set(copies.filter(copy => !copy.orphan && !copy.latest).map(latestGroup));
   let number = 0;
   const numbers = new Map();
   for (const [key, group] of ordered) {
@@ -216,7 +219,7 @@ export function render(copies, { color = false, numbered = false } = {}) {
       conversations.get(id).copies.push(copy);
     }
     for (const { label, copies: members } of conversations.values()) {
-      const kept = members.every(copy => copy.latest) && olderInApp.has(app(members[0]));
+      const kept = members.every(copy => copy.latest) && olderInGroup.has(latestGroup(members[0]));
       if (label) lines.push(`  ${truncate(label, 70)}${kept ? s.dim('  (latest)') : ''}`);
       for (const copy of members) {
         numbers.set(++number, copy);
@@ -295,7 +298,9 @@ async function stopCommand(options, io) {
     if (!chosen.length) {
       const kept = options.idleMs !== undefined ? filtered(copies, options).filter(copy => copy.latest && copy.measured && copy.idleMs >= options.idleMs) : [];
       out(kept.length
-        ? `Nothing to stop. ${kept.length} idle server${kept.length === 1 ? ' belongs' : 's belong'} to the latest conversation of ${kept.length === 1 ? 'its app' : 'their apps'}; add --include-latest to stop ${kept.length === 1 ? 'it' : 'them'} too.`
+        ? (kept.length === 1
+          ? 'Nothing to stop. 1 idle server belongs to the latest conversation of its agent and is kept; add --include-latest to stop it too.'
+          : `Nothing to stop. ${kept.length} idle servers belong to the latest conversations of their agents and are kept; add --include-latest to stop them too.`)
         : 'Nothing to stop.');
       return 0;
     }
@@ -322,7 +327,7 @@ async function watchCommand(options, io) {
   const time = () => new Date().toTimeString().slice(0, 5);
   out(options.idleMs === undefined
     ? `Checking MCP servers every ${formatDuration(options.everyMs)}, and stopping none (add --idle <time> to stop idle ones). Ctrl+C to quit.`
-    : `Checking MCP servers every ${formatDuration(options.everyMs)}. Servers idle for ${formatDuration(options.idleMs)} or more will be stopped${options['include-latest'] ? '' : ", except those of each app's latest conversation"}${options['dry-run'] ? ' (dry run)' : ''}. Ctrl+C to quit.`);
+    : `Checking MCP servers every ${formatDuration(options.everyMs)}. Servers idle for ${formatDuration(options.idleMs)} or more will be stopped${options['include-latest'] ? '' : ", except those of the conversations you used last"}${options['dry-run'] ? ' (dry run)' : ''}. Ctrl+C to quit.`);
   for (;;) {
     try {
       const copies = await check({ env: io.env });
@@ -369,15 +374,88 @@ async function listCommand(options, io) {
   return 0;
 }
 
+const version = () => JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version;
+
+// Settings files of plugins and extensions are many; doctor counts them together.
+const isPlugin = file => /[\\/](plugins|\.tmp|Claude Extensions)[\\/]/i.test(file);
+
+/**
+ * What mcp-janitor can read on this machine: the process list, the agents,
+ * their MCP settings, the files that name conversations and the state file.
+ * Changes nothing but the state folder, which it creates if missing.
+ */
+async function doctorCommand(options, io) {
+  const out = text => io.stdout.write(`${text}\n`);
+  const env = io.env;
+  const home = homeOf(env);
+  let problems = 0;
+  let label = '';
+  const line = (heading, ok, text) => {
+    if (ok === false) problems++;
+    out(`${(heading === label ? '' : heading).padEnd(14)} ${ok === true ? '✓' : ok === false ? '✗' : '–'} ${text}`);
+    label = heading;
+  };
+  out(`mcp-janitor ${version()} on ${process.platform}, Node.js ${process.versions.node}\n`);
+
+  let processes = [];
+  const started = Date.now();
+  try {
+    processes = snapshot();
+    line('Processes', true, `${processes.length} read in ${((Date.now() - started) / 1000).toFixed(1)} s`);
+  } catch (error) {
+    line('Processes', false, `could not be read: ${error.message}`);
+  }
+  const extraAgents = extraAgentsOf(env);
+  const agents = [...new Set(processes.filter(p => p.mine !== false).map(p => agentOf(p, extraAgents)).filter(Boolean))];
+  line('Agents', agents.length ? true : null, agents.length ? `running: ${agents.join(', ')}` : 'none running');
+
+  const sources = [];
+  const servers = configuredServers({ env, home, sources });
+  const files = new Map();
+  for (const source of sources) {
+    const key = source.error ? source.file : isPlugin(source.file) ? `${source.agent} plugins` : source.file;
+    const entry = files.get(key) ?? { agent: source.agent, file: source.file, plugin: !source.error && isPlugin(source.file), count: 0, servers: 0, error: null };
+    entry.count++;
+    entry.servers += source.servers;
+    entry.error ??= source.error;
+    files.set(key, entry);
+  }
+  if (!files.size) line('MCP settings', null, 'no MCP settings found for any agent');
+  for (const entry of [...files.values()].sort((a, b) => a.agent.localeCompare(b.agent))) {
+    const servers_ = `${entry.servers} server${entry.servers === 1 ? '' : 's'}`;
+    if (entry.error) line('MCP settings', false, `${entry.agent}: ${entry.file} cannot be read: ${entry.error}`);
+    else if (entry.plugin) line('MCP settings', true, `${entry.agent}: ${entry.count} plugin or extension file${entry.count === 1 ? '' : 's'} (${servers_})`);
+    else line('MCP settings', true, `${entry.agent}: ${entry.file} (${servers_})`);
+  }
+
+  for (const source of await conversationSources({ env, home })) line('Conversations', source.ok, `${source.agent}: ${source.detail}`);
+
+  const file = stateFile({ env, home });
+  const copies = findCopies(processes, servers, { extraAgents, known: loadState(file) });
+  await describeConversations(copies, { env, home });
+  const named = copies.filter(copy => !copy.orphan && (copy.agent === 'Codex' || copy.agent === 'Claude Code'));
+  const found = named.filter(copy => copy.conversation).length;
+  line('Servers', copies.length ? (found === named.length ? true : null) : null, copies.length
+    ? `${copies.length} running${named.length ? `; ${found} of ${named.length} matched to a conversation` : ''}`
+    : 'none running');
+
+  try {
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.accessSync(path.dirname(file), fs.constants.W_OK);
+    line('State file', true, file);
+  } catch (error) {
+    line('State file', false, `${file} cannot be written: ${error.message}`);
+  }
+  out(problems ? `\n${problems} problem${problems === 1 ? '' : 's'} found.` : '\nNo problems found.');
+  return problems ? 1 : 0;
+}
+
 export async function main(argv, io = { stdin: process.stdin, stdout: process.stdout, stderr: process.stderr, env: process.env }) {
   try {
     const options = parseArgs(argv);
     if (options.help) { io.stdout.write(HELP); return 0; }
-    if (options.version) {
-      const pkg = JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
-      io.stdout.write(`${pkg.version}\n`);
-      return 0;
-    }
+    if (options.version) { io.stdout.write(`${version()}\n`); return 0; }
+    if (options.command === 'doctor') return await doctorCommand(options, io);
     if (options.command === 'stop') return await stopCommand(options, io);
     if (options.command === 'watch') return await watchCommand(options, io);
     if (options.pids.length || options.idleMs !== undefined) throw new UsageError('--idle and PIDs go with stop or watch.');

@@ -190,6 +190,22 @@ test('servers whose agent exited are orphans; --orphans stops those seen with th
   }
 });
 
+test('doctor says what it can read, and what it cannot', async t => {
+  const { run, env } = sandbox(t);
+  const healthy = await run('doctor');
+  assert.equal(healthy.code, 0, healthy.stdout);
+  assert.match(healthy.stdout, /Processes +✓ \d+ read in/);
+  assert.match(healthy.stdout, /MCP settings +✓ Other: .*servers\.json \(1 server\)/);
+  assert.match(healthy.stdout, /State file +✓ /);
+  assert.match(healthy.stdout, /No problems found\./);
+
+  fs.writeFileSync(env.MCP_JANITOR_SERVERS, '{ "mcpServers": ');
+  const broken = await run('doctor');
+  assert.equal(broken.code, 1);
+  assert.match(broken.stdout, /✗ Other: .*servers\.json cannot be read/);
+  assert.match(broken.stdout, /1 problem found\./);
+});
+
 test('command lines keep characters beyond ASCII', async t => {
   const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1 << 30)', '測試-café'], { stdio: 'ignore' });
   t.after(() => child.kill('SIGKILL'));

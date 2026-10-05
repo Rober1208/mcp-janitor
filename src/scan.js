@@ -126,9 +126,12 @@ export const processKey = p => `${p.pid}:${Math.round(p.start)}`;
  */
 export function findCopies(processes, servers, { extraAgents = null, platform = process.platform, self = process.pid, known = {} } = {}) {
   const byPid = new Map(processes.map(p => [p.pid, p]));
+  // Only your own agents and servers: on a shared machine, other people's
+  // are none of your business.
+  const mine = p => p.mine !== false;
   const agents = new Map();
   for (const p of processes) {
-    const agent = agentOf(p, extraAgents);
+    const agent = mine(p) && agentOf(p, extraAgents);
     if (agent) agents.set(p.pid, agent);
   }
   // Each agent starts the servers of its own configuration. VS Code and
@@ -151,7 +154,7 @@ export function findCopies(processes, servers, { extraAgents = null, platform = 
   };
 
   for (const p of processes) {
-    if (agents.has(p.pid) || p.pid === self) continue;
+    if (agents.has(p.pid) || p.pid === self || !mine(p)) continue;
     const parent = parentOf(byPid, p);
     const record = known[processKey(p)];
     // A shell command whose text names a server is still a shell command,
@@ -177,7 +180,7 @@ export function findCopies(processes, servers, { extraAgents = null, platform = 
   // configuration names it (a plugin that brings its own runtime).
   for (const p of processes) {
     const parent = parentOf(byPid, p);
-    if (!parent || agents.get(parent.pid) !== 'Codex' || agents.has(p.pid) || RUNNERS.test(p.name) || /^(cmd|conhost|openconsole|codex.*)(\.exe)?$/i.test(p.name)) continue;
+    if (!parent || agents.get(parent.pid) !== 'Codex' || agents.has(p.pid) || !mine(p) || RUNNERS.test(p.name) || /^(cmd|conhost|openconsole|codex.*)(\.exe)?$/i.test(p.name)) continue;
     if (copies.some(copy => copy.root.pid === p.pid)) continue;
     if (copies.some(copy => copy.agentPid === parent.pid && Math.abs(copy.start - p.start) <= 500)) add(p, derivedName(p.command), parent);
   }
@@ -186,11 +189,21 @@ export function findCopies(processes, servers, { extraAgents = null, platform = 
 }
 
 /**
+ * Which copies compete for "latest". Codex never restarts a server it lost,
+ * so each agent process (the ChatGPT app, a Codex terminal, a VS Code window)
+ * keeps the conversation used last. Claude Code reconnects one from /mcp, so
+ * its sessions compete per app: only the session used last in a terminal, in
+ * VS Code or in the Claude app is kept.
+ */
+export const latestGroup = copy => (copy.agent === 'Claude Code'
+  ? `${copy.agent}|${copy.host ?? ''}` : `${copy.agent}|${copy.host ?? ''}|${copy.agentPid}`);
+
+/**
  * Mark the copies of the conversation you are most likely to come back to:
- * the one most recently active in each app (agent and host). Without a known
- * conversation, the servers an agent started together count as one; Claude
- * Desktop shares its servers with all its conversations. Orphans are never
- * the latest.
+ * the most recently active one of each group (see latestGroup). Without a
+ * known conversation, the servers an agent started together count as one;
+ * Claude Desktop shares its servers with all its conversations. Orphans are
+ * never the latest.
  */
 export function markLatest(copies, now = Date.now()) {
   const conversations = new Map();
@@ -206,7 +219,7 @@ export function markLatest(copies, now = Date.now()) {
       if (!set) sets.unshift(set = { agentPid: copy.agentPid, start: copy.start, key: `set:${copy.agentPid}:${copy.start}` });
       key = set.key;
     }
-    const entry = conversations.get(key) ?? { app: `${copy.agent}|${copy.host ?? ''}`, recency: 0, copies: [] };
+    const entry = conversations.get(key) ?? { app: latestGroup(copy), recency: 0, copies: [] };
     entry.recency = Math.max(entry.recency, copy.start, copy.conversation?.lastActivity ?? 0, copy.conversation?.busy ? now : 0);
     entry.copies.push(copy);
     conversations.set(key, entry);

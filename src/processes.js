@@ -4,8 +4,9 @@ import fs from 'node:fs';
 /**
  * A snapshot of the processes on this machine:
  * { pid, ppid, name, command, start (ms since epoch), cpuMs, ioBytes (null on
- * macOS), memoryBytes }. `start` tells a process apart from a later one that
- * reuses its PID.
+ * macOS), memoryBytes, mine }. `start` tells a process apart from a later one
+ * that reuses its PID. `mine` is whether the process belongs to the user
+ * running this: on Windows, whether it runs in the same logon session.
  */
 export function snapshot() {
   if (process.platform === 'win32') return windowsProcesses();
@@ -18,17 +19,18 @@ function windowsProcesses() {
   // Windows PowerShell writes in the console code page unless told otherwise,
   // which garbles command lines with non-ASCII paths.
   const script = `[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
+  $session = [System.Diagnostics.Process]::GetCurrentProcess().SessionId
   Get-CimInstance Win32_Process | ForEach-Object { [pscustomobject]@{
     p = $_.ProcessId; pp = $_.ParentProcessId; n = $_.Name; c = $_.CommandLine
     s = if ($_.CreationDate) { $_.CreationDate.ToUniversalTime().ToString('o') } else { $null }
     t = ([double]$_.UserModeTime + [double]$_.KernelModeTime) / 10000
     io = [double]$_.ReadTransferCount + [double]$_.WriteTransferCount
-    m = [double]$_.WorkingSetSize } } | ConvertTo-Json -Compress`;
+    m = [double]$_.WorkingSetSize; o = $_.SessionId -eq $session } } | ConvertTo-Json -Compress`;
   const output = execFileSync('powershell.exe', ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', script],
     { encoding: 'utf8', windowsHide: true, maxBuffer: 256 * 1024 * 1024 });
   return [].concat(JSON.parse(output)).map(p => ({
     pid: p.p, ppid: p.pp, name: p.n ?? '', command: p.c ?? '', start: p.s ? Date.parse(p.s) : 0,
-    cpuMs: p.t, ioBytes: p.io, memoryBytes: p.m,
+    cpuMs: p.t, ioBytes: p.io, memoryBytes: p.m, mine: p.o === true,
   }));
 }
 
@@ -45,7 +47,9 @@ function linuxProcesses() {
       // Fields after "pid (comm) ": state is the first, so field N is at N - 3.
       const fields = stat.slice(close + 2).split(' ');
       const command = fs.readFileSync(`/proc/${entry}/cmdline`, 'utf8').split('\0').filter(Boolean).join(' ');
-      const rss = /^VmRSS:\s+(\d+) kB/m.exec(fs.readFileSync(`/proc/${entry}/status`, 'utf8'));
+      const status = fs.readFileSync(`/proc/${entry}/status`, 'utf8');
+      const rss = /^VmRSS:\s+(\d+) kB/m.exec(status);
+      const uid = Number(/^Uid:\s+(\d+)/m.exec(status)?.[1]);
       let ioBytes = null;
       try {
         const io = fs.readFileSync(`/proc/${entry}/io`, 'utf8');
@@ -55,7 +59,7 @@ function linuxProcesses() {
         pid: Number(entry), ppid: Number(fields[1]), name, command: command || `[${name}]`,
         start: boot + (Number(fields[19]) / ticks) * 1000,
         cpuMs: ((Number(fields[11]) + Number(fields[12])) / ticks) * 1000,
-        ioBytes, memoryBytes: rss ? Number(rss[1]) * 1024 : 0,
+        ioBytes, memoryBytes: rss ? Number(rss[1]) * 1024 : 0, mine: uid === process.getuid(),
       });
     } catch {
       // The process exited while it was being read.
@@ -68,17 +72,17 @@ function macProcesses() {
   // Dates in English, so they can be parsed; characters in UTF-8, so non-ASCII
   // command lines come through as they are.
   const env = { ...process.env, LC_ALL: '', LC_TIME: 'C', LC_CTYPE: /utf-?8/i.test(process.env.LC_ALL || process.env.LC_CTYPE || process.env.LANG || '') ? (process.env.LC_ALL || process.env.LC_CTYPE || process.env.LANG) : 'UTF-8' };
-  const output = execFileSync('ps', ['-axo', 'pid=,ppid=,rss=,time=,lstart=,command='], { encoding: 'utf8', maxBuffer: 256 * 1024 * 1024, env });
+  const output = execFileSync('ps', ['-axo', 'pid=,ppid=,uid=,rss=,time=,lstart=,command='], { encoding: 'utf8', maxBuffer: 256 * 1024 * 1024, env });
   const result = [];
   for (const line of output.split('\n')) {
     // lstart is five words, e.g. "Mon Oct  5 14:22:06 2026".
-    const match = /^\s*(\d+)\s+(\d+)\s+(\d+)\s+([\d:.]+)\s+(\w+\s+\w+\s+\d+\s+[\d:]+\s+\d+)\s+(.*)$/.exec(line);
+    const match = /^\s*(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+([\d:.]+)\s+(\w+\s+\w+\s+\d+\s+[\d:]+\s+\d+)\s+(.*)$/.exec(line);
     if (!match) continue;
-    const cpuMs = match[4].split(':').reduce((total, part) => total * 60 + Number(part), 0) * 1000;
-    const command = match[6];
+    const cpuMs = match[5].split(':').reduce((total, part) => total * 60 + Number(part), 0) * 1000;
+    const command = match[7];
     result.push({
       pid: Number(match[1]), ppid: Number(match[2]), name: executableName(command), command,
-      start: Date.parse(match[5]), cpuMs, ioBytes: null, memoryBytes: Number(match[3]) * 1024,
+      start: Date.parse(match[6]), cpuMs, ioBytes: null, memoryBytes: Number(match[4]) * 1024, mine: Number(match[3]) === process.getuid(),
     });
   }
   return result;

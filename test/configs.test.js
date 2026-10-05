@@ -103,6 +103,22 @@ test('servers from every agent this tool knows', t => {
   assert.equal(byName.time.agent, 'VS Code');
 });
 
+test('each settings file read is reported, with the ones that cannot be parsed', t => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'mcp-janitor-home-'));
+  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(home, '.codex'));
+  fs.mkdirSync(path.join(home, '.cursor'));
+  fs.writeFileSync(path.join(home, '.codex', 'config.toml'), '[mcp_servers.a]\ncommand = "a-server"\n[mcp_servers.b]\ncommand = "b-server"\n');
+  fs.writeFileSync(path.join(home, '.cursor', 'mcp.json'), '{ "mcpServers": { "c": ');
+  const sources = [];
+  const servers = configuredServers({ env: {}, home, platform: 'linux', sources });
+  assert.deepEqual(servers.map(s => s.name), ['a', 'b']);
+  assert.deepEqual(sources.map(s => [s.agent, path.basename(s.file), s.servers, Boolean(s.error)]), [
+    ['Codex', 'config.toml', 2, false],
+    ['Cursor', 'mcp.json', 0, true],
+  ]);
+});
+
 test('CODEX_HOME, CLAUDE_CONFIG_DIR and MCP_JANITOR_SERVERS move the files', t => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'mcp-janitor-home-'));
   t.after(() => fs.rmSync(home, { recursive: true, force: true }));

@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.1.0
+## 0.1.1
 
 First release.
 
@@ -12,11 +12,16 @@ First release.
   (`--orphans`). It asks before stopping.
 - `mcp-janitor watch --idle 1h` keeps checking and stops servers once they
   have been idle that long.
-- Each app's latest conversation keeps its servers unless you add
-  `--include-latest`.
-- Only processes an agent started directly, with a command from its own
-  configuration matched word for word, count as its servers. Orphans are
-  stopped by `--orphans`, `--idle` and `watch` only when an earlier check saw
-  them with their agent; nothing is stopped for being idle before two checks.
+- The conversation you used last keeps its servers unless you add
+  `--include-latest`: in each Codex process, and for Claude Code, which can
+  reconnect a stopped server, in each place it runs.
+- `mcp-janitor doctor` checks what it can read on this machine: the process
+  list, the agents, their MCP settings, the files that name conversations and
+  its state file.
+- Only your own processes, started directly by an agent with a command from
+  its own configuration matched word for word, count as its servers. Orphans
+  are stopped by `--orphans`, `--idle` and `watch` only when an earlier check
+  saw them with their agent; nothing is stopped for being idle before two
+  checks.
 - Windows, Linux (including WSL) and macOS, Node.js 22 or later, no
   dependencies.

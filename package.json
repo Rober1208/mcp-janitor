@@ -1,6 +1,6 @@
 {
   "name": "mcp-janitor",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "See which MCP servers your AI agents (Codex, Claude Code, Claude Desktop, Cursor, VS Code) keep running, per conversation, and stop the idle ones.",
   "type": "module",
   "bin": {

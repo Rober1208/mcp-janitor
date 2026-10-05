@@ -135,8 +135,26 @@ test('the latest conversation is the one most recently active in each app', () =
     // Claude Desktop shares its servers with all conversations.
     copy(6, 'Claude Desktop', null, 50, 100, null),
     copy(7, 'Claude Desktop', null, 50, 90000, null),
+    // Codex cannot start a stopped server again: each Codex terminal keeps its own.
+    copy(8, 'Codex', null, 60, 100, { id: 'f', lastActivity: 300 }),
+    copy(9, 'Codex', null, 61, 100, { id: 'g', lastActivity: 900000 }),
   ], now);
-  assert.deepEqual(copies.map(c => c.latest), [true, false, true, false, true, true, true]);
+  assert.deepEqual(copies.map(c => c.latest), [true, false, true, false, true, true, true, true, true]);
+});
+
+test('only your own processes count', () => {
+  const processes = [
+    proc(10, 4, 'explorer.exe', 'explorer.exe', 1),
+    proc(20, 10, 'codex.exe', 'codex.exe app-server', 2),
+    proc(21, 20, 'node_repl.exe', 'C:\\rt\\node_repl.exe', 3),
+    // Someone else's agent and server, on the same machine.
+    proc(30, 10, 'codex.exe', 'codex.exe app-server', 4, { mine: false }),
+    proc(31, 30, 'node_repl.exe', 'C:\\rt\\node_repl.exe', 5, { mine: false }),
+    // Your agent, but a server started as another user.
+    proc(22, 20, 'node_repl.exe', 'C:\\rt\\node_repl.exe', 6, { mine: false }),
+  ];
+  const copies = findCopies(processes, [server('node_repl', 'C:\\rt\\node_repl.exe')], { platform: 'win32', self: -1 });
+  assert.deepEqual(copies.map(c => c.root.pid), [21]);
 });
 
 test('a process Codex started with a conversation\'s servers is one of them', () => {

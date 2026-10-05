@@ -31,6 +31,7 @@ test('arguments', () => {
   assert.equal(stop.yes, true);
   assert.deepEqual(stop.pids, [123, 456]);
   assert.equal(parseArgs(['watch', '--idle', '30m', '--every', '10s']).everyMs, 10000);
+  assert.equal(parseArgs(['doctor']).command, 'doctor');
   assert.throws(() => parseArgs(['--bogus']), /Unknown option --bogus/);
   assert.throws(() => parseArgs(['--idle']), /--idle needs a value/);
   assert.throws(() => parseArgs(['list', '123']), /Unexpected argument 123/);

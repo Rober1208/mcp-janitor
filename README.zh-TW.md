@@ -15,17 +15,22 @@
 
 Codex 每開一個對話，就把你設定的 MCP server 全部再啟動一份，而且一直留到 app 關閉為止。
 寫這個工具的那台電腦上，ChatGPT 桌面版累積了 11 份：11 個 Playwright、其他每個也各 11 個，
-共 5.6 GB，全部閒置。Claude Code 也是每個 session 各開一份。
+最多 5.6 GB，全部閒置。Claude Code 也是每個 session 各開一份。上游也有人回報同樣的問題：
+[openai/codex#30408](https://github.com/openai/codex/issues/30408)、
+[#35485](https://github.com/openai/codex/issues/35485)、
+[#38754](https://github.com/openai/codex/issues/38754)，Claude Code 則有過
+[anthropics/claude-code#24649](https://github.com/anthropics/claude-code/issues/24649)。
 
 ```bash
-npx github:Rober1208/mcp-janitor
+npx github:Rober1208/mcp-janitor#v0.1.1
 ```
 
 沒有相依套件、不用設定：它直接讀各個 agent 本來就有的 MCP 設定。
-支援 Windows、Linux（含 WSL）和 macOS，需要 Node.js 22 以上和 Git。想隨時直接打 `mcp-janitor`：
+支援 Windows、Linux（含 WSL）和 macOS，需要 Node.js 22 以上和 Git；要顯示 Codex 的對話名稱需要 Node.js 22.13 以上。
+想隨時直接打 `mcp-janitor`：
 
 ```bash
-npm install -g github:Rober1208/mcp-janitor
+npm install -g github:Rober1208/mcp-janitor#v0.1.1
 ```
 
 ## 用法
@@ -37,14 +42,17 @@ mcp-janitor stop 4180 5236     # 關掉這幾個（PID 見清單）
 mcp-janitor stop --idle 1h     # 關掉閒置一小時以上的
 mcp-janitor stop --orphans     # 關掉 agent 已經結束、被留下來的
 mcp-janitor watch --idle 1h    # 持續檢查，閒置滿一小時就關
+mcp-janitor doctor             # 檢查它在這台電腦上讀得到哪些資料
 ```
 
 用 `--idle` 或 `--orphans` 時，`stop` 會先列出要關的項目並詢問；在腳本裡可加 `--yes` 跳過詢問，
 或用 `--dry-run` 只看不關。任何指令都能用 `--server playwright` 縮小範圍，或用 `--agent` 加上
 `codex`、`"claude code"`、`"claude desktop"`、`cursor`、`vscode`、`gemini` 其中之一。
 
-**預設不會動到你正在用的對話。** 在每個 app 裡（ChatGPT app、VS Code、終端機裡的 Claude Code……），
-你最後用的那個對話即使閒置也會保留，因為你可能隨時回來繼續。加上 `--include-latest` 才會一起關。
+**預設不會動到你正在用的對話。** 每個 Codex 程序（ChatGPT app、一個 Codex 終端機、一個 VS Code 視窗）
+都會保留你最後用的那個對話的 MCP，即使閒置也一樣，因為你可能隨時回來繼續，而 Codex 沒辦法重新啟動被關掉的 MCP。
+Claude Code 可以（在 `/mcp` 重新連線），所以它的 session 在每個地方（終端機、VS Code、Claude app）只保留你最後用的那一個。
+加上 `--include-latest` 才會一起關。
 
 ### MCP 被關掉之後，對話會怎樣
 
@@ -60,7 +68,7 @@ mcp-janitor watch --idle 1h    # 持續檢查，閒置滿一小時就關
 
 ```text
 $ mcp-janitor watch --idle 1h
-Checking MCP servers every 1m. Servers idle for 1h or more will be stopped, except those of each app's latest conversation. Ctrl+C to quit.
+Checking MCP servers every 1m. Servers idle for 1h or more will be stopped, except those of the conversations you used last. Ctrl+C to quit.
 [15:42] stopped 4 servers, 610 MB: playwright (Codex in ChatGPT app, idle 1h 2m), drawio (Codex in ChatGPT app, idle 1h 2m), ...
 ```
 
@@ -77,7 +85,7 @@ Start-Process -WindowStyle Minimized mcp-janitor 'watch --idle 1h'   # Windows
 ## 運作方式
 
 **怎麼判斷哪些程序是 MCP server。** mcp-janitor 先讀你替各 agent 設定的 MCP server，
-再找由 agent *直接*啟動、指令和它自己設定裡的某一筆逐字相符的程序。agent 替你執行的指令通常會經過 shell，
+再從你自己的程序裡（多人共用的電腦上，別人的程序不會列入）找由 agent *直接*啟動、指令和它自己設定裡的某一筆逐字相符的程序。agent 替你執行的指令通常會經過 shell，
 而 shell 永遠不會被當成 MCP。Codex 還會啟動一些沒寫在設定檔裡的插件 server；
 只有和同一個對話的其他 server 在同一瞬間啟動的程序，才會被算成其中之一。
 
@@ -98,6 +106,9 @@ server 操控的瀏覽器（Playwright、Puppeteer）在背景的動作不算 se
 從沒看過、也對不到對話的 server 會顯示 `–`，下次檢查才有數字。
 沒有被檢查過兩次的 server 不會因為閒置被關：`stop --idle` 第一次看到某個 server 時，會在三秒後再看一次。
 
+**記憶體。** 顯示的記憶體是 server 和它啟動的所有程序的工作集（常駐記憶體）。
+和其他程序共用的記憶體會在每個程序各算一次，所以加總是上限。
+
 **怎麼關。** 送出訊號前，mcp-janitor 會確認那個 PID 仍然是清單上的同一個程序。
 Linux 和 macOS 先送 SIGTERM，三秒後還在才送 SIGKILL；Windows 直接結束程序。
 
@@ -117,9 +128,11 @@ Linux 和 macOS 先送 SIGTERM，三秒後還在才送 SIGKILL；Windows 直接�
 
 目前實測過：Windows 11 上 ChatGPT 桌面版裡的 Codex，以及 Codex app server 0.160，都是真的 MCP server；
 測試套件會在 Windows、Linux、macOS 上跑真實程序。Cursor、VS Code、Gemini CLI 依官方文件的設定檔位置讀取，
-但還沒在實際安裝上試過。如果你的電腦上漏抓或抓錯，歡迎
-[開 issue](https://github.com/Rober1208/mcp-janitor/issues) 並附上 `mcp-janitor --json` 的輸出。
-輸出裡有你的對話標題，不想公開的請先換掉。
+但還沒在實際安裝上試過。
+
+對話名稱來自各 agent 自己保存的檔案，agent 改版時這些檔案可能會變。`mcp-janitor doctor` 會逐一檢查每個來源，告訴你哪些讀不到。
+如果你的電腦上漏抓或抓錯，歡迎 [開 issue](https://github.com/Rober1208/mcp-janitor/issues)，
+附上 `mcp-janitor doctor` 和 `mcp-janitor --json` 的輸出。裡面有你的檔案路徑和對話標題，不想公開的請先換掉。
 
 ## 隱私
 
