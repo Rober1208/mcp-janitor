@@ -23,10 +23,24 @@ test('a bare interpreter is not enough to recognize a server', () => {
   assert.ok(!matchesServer('python -u worker.py', server('x', 'python', ['-u'])));
 });
 
-test('placeholders that were not expanded match anything', () => {
+test('arguments match whole words, not parts of other words', () => {
+  assert.ok(!matchesServer('python3 -m http.server 8000', server('x', 'python3', ['-m', 'server'])));
+  assert.ok(matchesServer('python3 -m server', server('x', 'python3', ['-m', 'server'])));
+  assert.ok(!matchesServer('uv run C:\\sites\\webserver.py', server('x', 'uv', ['run', 'server.py'])));
+  assert.ok(!matchesServer('"C:\\Program Files\\nodejs\\node.exe" C:\\vscode\\tsserver.js --stdio', server('x', 'node', ['server.js'])));
+  assert.ok(!matchesServer('C:\\tools\\other\\server.exe', server('x', 'C:\\tools\\server.exe')), 'a program given by path must be that path');
+  assert.ok(matchesServer('"C:\\Program Files\\x\\server.exe" --a', server('x', 'C:\\Program Files\\x\\server.exe', ['--a'])));
+});
+
+test('placeholders that were not expanded', () => {
   const github = server('github', 'npx', ['-y', '@modelcontextprotocol/server-github', '--token', '${user_config.token}']);
-  assert.ok(matchesServer('npx -y @modelcontextprotocol/server-github --token abc123', github));
-  assert.ok(matchesServer('/opt/x/bin/server --port 1', server('x', '${PLUGIN}/bin/server', ['--port'])));
+  assert.ok(matchesServer('npx -y @modelcontextprotocol/server-github --token abc123', github), 'an argument that is only a placeholder can be anything');
+  assert.ok(matchesServer('node C:\\data\\x\\index.js', server('x', 'node', ['${HOME}\\x\\index.js'])), 'part of an argument');
+  // A program that is still a placeholder could be anything: it matches nothing.
+  for (const command of ['${input:serverPath}', '${PLUGIN}/bin/server', '${user_config.path}']) {
+    assert.ok(!matchesServer('C:\\WINDOWS\\Explorer.EXE', server('x', command)), command);
+    assert.ok(!matchesServer('/opt/x/bin/server --port 1', server('x', command, ['--port'])), command);
+  }
 });
 
 test('Claude Desktop extensions match by the script they run', () => {
@@ -130,6 +144,36 @@ test('a process Codex started with a conversation\'s servers is one of them', ()
   const cua = copies.find(copy => copy.root.pid === 62);
   assert.equal(cua.name, 'cua-repl');
   assert.ok(!copies.some(copy => copy.root.pid === 63), 'not the console host');
+});
+
+test('each agent starts only the servers of its own configuration', () => {
+  const processes = [
+    proc(10, 4, 'explorer.exe', 'explorer.exe', 1),
+    proc(20, 10, 'codex.exe', 'codex.exe app-server', 2),
+    proc(21, 20, 'node.exe', 'node C:\\srv\\notes.js', 3),
+    proc(30, 10, 'Code.exe', 'Code.exe --type=utility', 4),
+    proc(31, 30, 'node.exe', 'node C:\\vscode\\tsserver.js', 5),
+    proc(32, 30, 'node.exe', 'node C:\\srv\\notes.js', 6),
+  ];
+  const servers = [server('notes', 'node', ['C:\\srv\\notes.js'], 'Claude Desktop')];
+  // Codex does not start Claude Desktop's servers; VS Code can find them.
+  assert.deepEqual(findCopies(processes, servers, { platform: 'win32', self: -1 }).map(c => [c.root.pid, c.agent]), [[32, 'VS Code']]);
+});
+
+test('an orphan is certain only when it was seen with its agent before', () => {
+  const processes = [
+    proc(1, 0, 'init', '/init', 1),
+    proc(5, 1, 'Relay(6)', '/init', 2),
+    // Its agent exited; WSL handed it to the session's Relay.
+    proc(40, 5, 'node', 'node /srv/notes.js', 100),
+    // Never seen before, with a parent that does not adopt orphans.
+    proc(50, 5, 'node', 'node /srv/notes.js', 110),
+    // Never seen before, adopted by init.
+    proc(60, 1, 'node', 'node /srv/notes.js', 120),
+  ];
+  const known = { '40:100': { name: 'notes', agent: 'Claude Code', agentPid: 30, confirmed: true } };
+  const copies = findCopies(processes, [server('notes', 'node', ['/srv/notes.js'], 'Claude Code')], { platform: 'linux', self: -1, known });
+  assert.deepEqual(copies.map(c => [c.root.pid, c.orphan, c.confirmed, c.agent]), [[40, true, true, 'Claude Code'], [60, true, false, 'Claude Code']]);
 });
 
 test('on Linux and macOS an orphan belongs to init or a subreaper', () => {

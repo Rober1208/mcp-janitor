@@ -20,7 +20,21 @@ test('the first look cannot tell how long a server has been idle', t => {
   track(copies, { file: at, now: 10 * MINUTE });
   assert.equal(copies[0].lastUsed, null);
   assert.equal(copies[0].idleMs, null);
+  assert.equal(copies[0].measured, false);
   assert.ok(fs.existsSync(at));
+  const again = [copy('1:0')];
+  track(again, { file: at, now: 11 * MINUTE });
+  assert.equal(again[0].measured, true);
+});
+
+test('records remember which agent a server belonged to', t => {
+  const at = file(t);
+  track([copy('1:0', { name: 'notes', agent: 'Codex', agentPid: 30, confirmed: true }), copy('2:0', { name: 'x', agent: 'Codex', agentPid: null, confirmed: false })], { file: at, now: 0 });
+  // Later its agent is gone: still confirmed, and the agent is remembered.
+  track([copy('1:0', { name: 'notes', agent: 'Codex', agentPid: null, confirmed: true, orphan: true }), copy('2:0', { name: 'x', agent: 'Codex', agentPid: null, confirmed: false })], { file: at, now: MINUTE });
+  const { copies } = JSON.parse(fs.readFileSync(at, 'utf8'));
+  assert.deepEqual([copies['1:0'].confirmed, copies['1:0'].agentPid, copies['1:0'].name], [true, 30, 'notes']);
+  assert.equal(copies['2:0'].confirmed, false);
 });
 
 test('a quiet conversation bounds when its servers were last used', t => {

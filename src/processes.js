@@ -15,7 +15,10 @@ export function snapshot() {
 }
 
 function windowsProcesses() {
-  const script = `Get-CimInstance Win32_Process | ForEach-Object { [pscustomobject]@{
+  // Windows PowerShell writes in the console code page unless told otherwise,
+  // which garbles command lines with non-ASCII paths.
+  const script = `[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
+  Get-CimInstance Win32_Process | ForEach-Object { [pscustomobject]@{
     p = $_.ProcessId; pp = $_.ParentProcessId; n = $_.Name; c = $_.CommandLine
     s = if ($_.CreationDate) { $_.CreationDate.ToUniversalTime().ToString('o') } else { $null }
     t = ([double]$_.UserModeTime + [double]$_.KernelModeTime) / 10000
@@ -62,8 +65,10 @@ function linuxProcesses() {
 }
 
 function macProcesses() {
-  const output = execFileSync('ps', ['-axo', 'pid=,ppid=,rss=,time=,lstart=,command='],
-    { encoding: 'utf8', maxBuffer: 256 * 1024 * 1024, env: { ...process.env, LC_ALL: 'C' } });
+  // Dates in English, so they can be parsed; characters in UTF-8, so non-ASCII
+  // command lines come through as they are.
+  const env = { ...process.env, LC_ALL: '', LC_TIME: 'C', LC_CTYPE: /utf-?8/i.test(process.env.LC_ALL || process.env.LC_CTYPE || process.env.LANG || '') ? (process.env.LC_ALL || process.env.LC_CTYPE || process.env.LANG) : 'UTF-8' };
+  const output = execFileSync('ps', ['-axo', 'pid=,ppid=,rss=,time=,lstart=,command='], { encoding: 'utf8', maxBuffer: 256 * 1024 * 1024, env });
   const result = [];
   for (const line of output.split('\n')) {
     // lstart is five words, e.g. "Mon Oct  5 14:22:06 2026".
@@ -102,7 +107,10 @@ export function parentOf(byPid, process_) {
 /** A process and its living descendants, leaving out those that fail `keep` and theirs. */
 export function subtree(processes, root, keep = () => true) {
   const children = new Map();
-  for (const p of processes) children.set(p.ppid, [...(children.get(p.ppid) ?? []), p]);
+  for (const p of processes) {
+    if (!children.has(p.ppid)) children.set(p.ppid, []);
+    children.get(p.ppid).push(p);
+  }
   const result = [];
   const visit = p => {
     result.push(p);
@@ -113,30 +121,34 @@ export function subtree(processes, root, keep = () => true) {
 }
 
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
-const alive = (current, target) => current.some(p => p.pid === target.pid && Math.abs(p.start - target.start) < 1000);
+
+// The targets still running: a PID with another start time is someone else now.
+function living(targets) {
+  const current = new Map(snapshot().map(p => [p.pid, p]));
+  return targets.filter(target => Math.abs((current.get(target.pid)?.start ?? -Infinity) - target.start) < 1000);
+}
 
 /**
- * Stop processes, given as { pid, start } from a snapshot. A PID whose start
- * time no longer matches belongs to someone else now and is left alone.
- * POSIX processes get SIGTERM first and SIGKILL after a grace period.
+ * Stop processes, given as { pid, start } from a snapshot. Each one is
+ * checked against a fresh snapshot right before it is signaled. POSIX
+ * processes get SIGTERM first and SIGKILL after a grace period.
  */
 export async function stopProcesses(targets, { graceMs = 3000 } = {}) {
   const signal = (list, name) => {
     for (const target of list) { try { process.kill(target.pid, name); } catch {} }
   };
-  let remaining = targets.filter(target => alive(snapshot(), target));
+  let remaining = living(targets);
   if (process.platform === 'win32') {
     signal(remaining, 'SIGKILL');
   } else {
     signal(remaining, 'SIGTERM');
-    for (const end = Date.now() + graceMs; Date.now() < end; await delay(200)) {
-      const current = snapshot();
-      remaining = remaining.filter(target => alive(current, target));
-      if (!remaining.length) break;
+    for (const end = Date.now() + graceMs; remaining.length && Date.now() < end;) {
+      await delay(200);
+      remaining = living(remaining);
     }
-    signal(remaining.filter(target => alive(snapshot(), target)), 'SIGKILL');
+    signal(living(remaining), 'SIGKILL');
   }
   await delay(300);
-  const current = snapshot();
-  return { stopped: targets.filter(target => !alive(current, target)).length, failed: targets.filter(target => alive(current, target)) };
+  const failed = living(targets);
+  return { stopped: targets.length - failed.length, failed };
 }

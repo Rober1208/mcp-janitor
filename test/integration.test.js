@@ -9,7 +9,7 @@ import { PassThrough } from 'node:stream';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { main } from '../src/cli.js';
-import { parentOf, snapshot } from '../src/processes.js';
+import { snapshot } from '../src/processes.js';
 
 const cli = fileURLToPath(new URL('../bin/mcp-janitor.js', import.meta.url));
 const agentScript = fileURLToPath(new URL('./fixtures/fake-agent.js', import.meta.url));
@@ -159,28 +159,42 @@ test('without a terminal, stop wants --yes', async t => {
   assert.equal(alive(server), true);
 });
 
-test('finds servers whose agent has exited', async t => {
+test('servers whose agent exited are orphans; --orphans stops those seen with their agent', async t => {
   const { run, list, agent } = sandbox(t);
-  const { servers: [server], exited } = await agent(1, 'exit');
-  await exited;
-  const parent = (() => {
-    const all = snapshot();
-    const byPid = new Map(all.map(p => [p.pid, p]));
-    return parentOf(byPid, byPid.get(server));
-  })();
-  // Linux hands orphans to init or to the nearest subreaper; this tool knows
-  // init, systemd, launchd and WSL's Relay.
-  if (process.platform !== 'win32' && parent && parent.pid !== 1 && !/^(systemd|launchd|init|Relay\(\d+\))$/.test(parent.name)) {
-    t.skip(`orphans go to ${parent.name} here`);
-    return;
-  }
-  const copy = (await list()).find(c => c.pid === server);
-  assert.ok(copy, 'the orphan is listed');
-  assert.equal(copy.orphan, true);
-  assert.equal(copy.agentPid, null);
+  // Seen with its agent, which then dies.
+  const seen = await agent(1, 'detach');
+  assert.equal((await list()).find(c => c.pid === seen.servers[0])?.confirmed, true);
+  process.kill(seen.pid, 'SIGKILL');
+  for (const end = Date.now() + 10000; alive(seen.pid) && Date.now() < end;) await delay(200);
+  // Its agent was gone before mcp-janitor ever looked.
+  const unseen = await agent(1, 'exit');
+  await unseen.exited;
+
+  const copies = await list();
+  const orphan = copies.find(c => c.pid === seen.servers[0]);
+  assert.deepEqual([orphan?.orphan, orphan?.confirmed, orphan?.agentPid], [true, true, null]);
+  // Linux and macOS hand an orphan to init or a subreaper. WSL's Relay is the
+  // parent of everything it starts, so there a never-seen one is not listed.
+  const suspect = copies.find(c => c.pid === unseen.servers[0]);
+  if (suspect) assert.deepEqual([suspect.orphan, suspect.confirmed], [true, false]);
+  else assert.notEqual(process.platform, 'win32', 'on Windows a server whose parent is gone is listed');
+
   const stopped = await run('stop', '--orphans', '--yes');
   assert.match(stopped.stdout, /Stopped 1 server/);
-  assert.equal(alive(server), false);
+  assert.equal(alive(seen.servers[0]), false);
+  assert.equal(alive(unseen.servers[0]), true, '--orphans leaves the ones never seen with their agent');
+  if (suspect) {
+    const picked = await run('stop', String(unseen.servers[0]), '--yes');
+    assert.match(picked.stdout, /Stopped 1 server/);
+    assert.equal(alive(unseen.servers[0]), false);
+  }
+});
+
+test('command lines keep characters beyond ASCII', async t => {
+  const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1 << 30)', '測試-café'], { stdio: 'ignore' });
+  t.after(() => child.kill('SIGKILL'));
+  await delay(500);
+  assert.match(snapshot().find(p => p.pid === child.pid)?.command ?? '', /測試-café/);
 });
 
 test('watch stops servers once they have been idle long enough', async t => {

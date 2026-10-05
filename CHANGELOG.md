@@ -14,5 +14,9 @@ First release.
   have been idle that long.
 - Each app's latest conversation keeps its servers unless you add
   `--include-latest`.
+- Only processes an agent started directly, with a command from its own
+  configuration matched word for word, count as its servers. Orphans are
+  stopped by `--orphans`, `--idle` and `watch` only when an earlier check saw
+  them with their agent; nothing is stopped for being idle before two checks.
 - Windows, Linux (including WSL) and macOS, Node.js 22 or later, no
   dependencies.

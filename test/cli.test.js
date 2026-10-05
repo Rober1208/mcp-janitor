@@ -37,6 +37,9 @@ test('arguments', () => {
   assert.throws(() => parseArgs(['--json', 'stop']), /Unexpected argument stop/);
   assert.throws(() => parseArgs(['watch', '--every', '1s']), /at least 5s/);
   assert.throws(() => parseArgs(['--yes=1']), /Unknown option/);
+  // Agents by their whole name: "code" is not Codex, and "claude" is two agents.
+  for (const name of ['codex', 'Claude Code', 'claude-desktop', 'vscode', 'gemini', 'other']) assert.doesNotThrow(() => parseArgs(['--agent', name]), name);
+  for (const name of ['claude', 'code', 'chatgpt']) assert.throws(() => parseArgs(['--agent', name]), /--agent must be one of: codex, claude desktop, claude code/, name);
 });
 
 test('choosing servers by number', () => {
@@ -66,7 +69,8 @@ test('the list groups servers by agent and conversation', () => {
     copy('playwright', 61, { conversation: current, latest: true, idleMs: 30000 }),
     copy('node_repl', 42, { conversation: old, idleMs: null }),
     copy('github', 90, { agent: 'Claude Code', host: null, agentPid: 80, conversation: { id: 'c', title: null, cwd: '/work/app', busy: true } }),
-    copy('ilovepdf', 99, { agent: 'Codex', host: null, agentPid: null, orphan: true }),
+    copy('ilovepdf', 99, { agent: 'Codex', host: null, agentPid: null, orphan: true, confirmed: true }),
+    copy('notes', 98, { agent: 'Codex', host: null, agentPid: null, orphan: true, confirmed: false, idleMs: null }),
   ], { numbered: true });
   assert.deepEqual(lines, [
     'Claude Code (pid 80): 1 server, 100 MB',
@@ -82,6 +86,9 @@ test('the list groups servers by agent and conversation', () => {
     '',
     'Orphans, left running by an agent that exited: 1 server, 100 MB',
     '    5  ilovepdf     100 MB  idle 3h       pid 99',
+    '',
+    'Possibly left behind (never seen with their agent): 1 server, 100 MB',
+    '    6  notes        100 MB  –             pid 98',
     '',
   ]);
   assert.equal(numbers.get(4).root.pid, 61);

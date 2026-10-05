@@ -82,6 +82,7 @@ test('Codex: a server set belongs to the thread created or opened just before it
   // An ephemeral thread is in no database, only in the log.
   log.run(...at(T + 240000 + 50), ephemeral, 'pid:4200:abc', 'shell_snapshot: done');
   log.run(...at(T + 300000), fresh, 'pid:4200:abc', 'turn finished');
+  log.run(...at(T + 125000), sub, 'pid:4200:abc', 'turn finished');
   logs.close();
 
   const copy = start => ({ agent: 'Codex', agentPid: 4200, agentStart: 0, start, orphan: false });
@@ -96,6 +97,33 @@ test('Codex: a server set belongs to the thread created or opened just before it
   assert.equal(copies[3].conversation.id, ephemeral);
   assert.equal(copies[3].conversation.title, null);
   assert.equal(copies[4].conversation, null);
+});
+
+test('Codex: the thread opened closest to the servers\' start, by this process', { skip: !DatabaseSync && 'node:sqlite is not available' }, async t => {
+  const dir = temporary(t);
+  const T = Date.parse('2026-10-05T08:00:00.500Z');
+  const [a, b, other] = [v7(T - 86400000, '8def-00000000000a'), v7(T - 2 * 86400000, '8def-00000000000b'), v7(T - 200, '8def-00000000000c')];
+  const state = new DatabaseSync(path.join(dir, 'state_5.sqlite'));
+  state.exec('create table threads (id text primary key, title text not null, source text not null, created_at_ms integer, updated_at_ms integer)');
+  const insert = state.prepare('insert into threads values (?, ?, ?, ?, ?)');
+  insert.run(a, 'A', 'vscode', T - 86400000, T);
+  insert.run(b, 'B', 'vscode', T - 2 * 86400000, T);
+  // Created at that moment by another Codex on the machine.
+  insert.run(other, 'Other app', 'cli', T - 200, T);
+  state.close();
+  const logs = new DatabaseSync(path.join(dir, 'logs_2.sqlite'));
+  logs.exec('create table logs (id integer primary key autoincrement, ts integer, ts_nanos integer, level text, target text, feedback_log_body text, thread_id text, process_uuid text)');
+  const log = logs.prepare('insert into logs (ts, ts_nanos, thread_id, process_uuid, feedback_log_body) values (?, ?, ?, ?, ?)');
+  const at = ms => [Math.floor(ms / 1000), (ms % 1000) * 1e6];
+  // A is opened again; B is opened 1.5 s later, right after A's servers started.
+  log.run(...at(T - 100), a, 'pid:700:x', 'app_server.request{rpc.method="thread/resume"}: loaded');
+  log.run(...at(T + 1400), b, 'pid:700:x', 'app_server.request{rpc.method="thread/resume"}: loaded');
+  log.run(...at(T - 150), other, 'pid:800:y', 'shell_snapshot: done');
+  logs.close();
+  const copies = [{ agent: 'Codex', agentPid: 700, agentStart: 0, start: T, orphan: false }, { agent: 'Codex', agentPid: 700, agentStart: 0, start: T + 1500, orphan: false }];
+  await describeConversations(copies, { env: { CODEX_HOME: dir }, home: dir });
+  assert.equal(copies[0].conversation.title, 'A');
+  assert.equal(copies[1].conversation.title, 'B');
 });
 
 test('Codex without the databases: rollout files still name new threads', async t => {

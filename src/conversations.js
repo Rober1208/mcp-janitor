@@ -41,15 +41,17 @@ function claudeSessions(env, home) {
     let session;
     try { session = JSON.parse(fs.readFileSync(path.join(dir, 'sessions', name), 'utf8')); } catch { continue; }
     if (!Number.isInteger(session?.pid)) continue;
+    let described = null;
     sessions.set(session.pid, {
       startedAt: session.startedAt ?? 0,
       describe: () => {
+        if (described) return described;
         // The transcript changes with every message.
         let transcript = 0;
         for (const project of list(path.join(dir, 'projects'))) {
           try { transcript = fs.statSync(path.join(dir, 'projects', project, `${session.sessionId}.jsonl`)).mtimeMs; break; } catch {}
         }
-        return {
+        return described = {
           id: session.sessionId ?? null, title: session.name || null, cwd: session.cwd ?? null,
           lastActivity: Math.max(session.updatedAt ?? 0, session.statusUpdatedAt ?? 0, transcript) || null,
           busy: session.status === 'busy',
@@ -109,23 +111,31 @@ async function openCodex(env, home) {
   };
   return {
     conversationAt(agentPid, start) {
+      // Process start times are exact on Windows, and within about a second elsewhere.
+      const slack = process.platform === 'win32' ? 250 : 1500;
+      const process_ = `pid:${agentPid}:%`;
       const candidates = [];
       const ids = known(start);
       // The agent's log around that time names the threads it worked on; a
       // thread opened again, or whose servers restarted, is logged with it.
       const sql = `select thread_id, ts, ts_nanos, (feedback_log_body like '%"thread/resume"%' or feedback_log_body like '%start_server_task%'
         or feedback_log_body like '%make_rmcp_client%') as opened from logs where ts between ? and ? and process_uuid like ? and thread_id is not null`;
-      for (const row of query(logs, sql, Math.floor(start / 1000) - 10, Math.ceil(start / 1000) + 10, `pid:${agentPid}:%`)) {
+      for (const row of query(logs, sql, Math.floor(start / 1000) - 10, Math.ceil(start / 1000) + 10, process_)) {
         ids.add(row.thread_id);
-        const at = row.ts * 1000 + Math.floor((row.ts_nanos ?? 0) / 1e6);
-        if (row.opened && at <= start + 2000) candidates.push({ id: row.thread_id, at });
+        if (row.opened) candidates.push({ id: row.thread_id, at: row.ts * 1000 + Math.floor((row.ts_nanos ?? 0) / 1e6) });
       }
-      // A new thread's servers start right after the thread is created.
+      // A new thread's servers start right after the thread is created. The
+      // state database lists the threads of every Codex on the machine; with
+      // the log at hand, only the threads this process worked on count.
       for (const id of ids) {
         const created = uuidTime(id);
-        if (created !== null && created >= start - 10000 && created <= start + 2000) candidates.push({ id, at: created });
+        if (created === null || created < start - 10000 || created > start + slack) continue;
+        if (logs && !query(logs, 'select 1 as found from logs where thread_id = ? and process_uuid like ? limit 1', id, process_).length) continue;
+        candidates.push({ id, at: created });
       }
-      const best = candidates.sort((a, b) => b.at - a.at)[0];
+      // The event closest to the moment the servers started.
+      const best = candidates.filter(c => c.at >= start - 10000 && c.at <= start + slack)
+        .sort((a, b) => Math.abs(a.at - start) - Math.abs(b.at - start))[0];
       return best ? thread(best.id) : null;
     },
     close() { state?.close(); logs?.close(); },

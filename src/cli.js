@@ -5,8 +5,8 @@ import readline from 'node:readline/promises';
 import { configuredServers } from './configs.js';
 import { describeConversations } from './conversations.js';
 import { snapshot, stopProcesses } from './processes.js';
-import { findCopies, markLatest } from './scan.js';
-import { stateFile, track } from './state.js';
+import { AGENT_NAMES, findCopies, markLatest } from './scan.js';
+import { loadState, stateFile, track } from './state.js';
 
 const HELP = `mcp-janitor: see which MCP servers your AI agents keep running, and stop the idle ones.
 
@@ -19,7 +19,7 @@ Usage:
 
 Options:
   --idle <time>       How long a server must be idle, such as 30m, 2h or 1d
-  --orphans           Only servers whose agent has exited
+  --orphans           Only servers seen with an agent that has since exited
   --server <name>     Only servers with this name
   --agent <name>      Only servers of this agent, such as codex or "claude code"
   --include-latest    Also stop servers of each app's latest conversation
@@ -67,6 +67,7 @@ export function parseArgs(argv) {
       throw new UsageError(`Unexpected argument ${arg}.`);
     }
   }
+  if (options.agent !== undefined) agentNamed(options.agent);
   if (options.idle !== undefined) options.idleMs = parseDuration(options.idle, '--idle');
   options.everyMs = options.every === undefined ? 60000 : parseDuration(options.every, '--every');
   if (options.everyMs < 5000) throw new UsageError('--every must be at least 5s.');
@@ -131,21 +132,37 @@ export async function check({ env = process.env, now = Date.now() } = {}) {
   // The home folder as the environment gives it, as Node.js would read it.
   const home = (process.platform === 'win32' ? env.USERPROFILE : env.HOME) || os.homedir();
   const extraAgents = env.MCP_JANITOR_AGENTS ? new RegExp(env.MCP_JANITOR_AGENTS, 'i') : null;
-  const copies = findCopies(snapshot(), configuredServers({ env, home }), { extraAgents });
+  const file = stateFile({ env, home });
+  const before = loadState(file);
+  const copies = findCopies(snapshot(), configuredServers({ env, home }), { extraAgents, known: before });
   await describeConversations(copies, { env, home });
   markLatest(copies, now);
-  track(copies, { file: stateFile({ env, home }), now });
+  track(copies, { file, now, before });
   return copies;
 }
 
-function filtered(copies, options) {
-  return copies.filter(copy => (!options.server || copy.name.toLowerCase() === options.server.toLowerCase())
-    && (!options.agent || `${copy.agent} ${copy.host ?? ''}`.toLowerCase().includes(options.agent.toLowerCase()))
-    && (!options.orphans || copy.orphan));
+// An agent as people type it: "claude code", "claude-code", "vscode", "gemini".
+function agentNamed(text) {
+  const simple = name => String(name).toLowerCase().replace(/[^a-z0-9]/g, '');
+  const wanted = simple(text) === 'gemini' ? 'geminicli' : simple(text);
+  const agent = AGENT_NAMES.find(name => simple(name) === wanted);
+  if (!agent) throw new UsageError(`--agent must be one of: ${AGENT_NAMES.map(name => name.toLowerCase()).join(', ')}.`);
+  return agent;
 }
 
+function filtered(copies, options) {
+  const agent = options.agent === undefined ? null : agentNamed(options.agent);
+  return copies.filter(copy => (!options.server || copy.name.toLowerCase() === options.server.toLowerCase())
+    && (agent === null || copy.agent === agent)
+    && (!options.orphans || (copy.orphan && copy.confirmed)));
+}
+
+// Servers that may be stopped for being idle: measured at least twice, so
+// that work between the checks shows; not of an app's latest conversation
+// unless asked; and orphans only when they were seen with their agent.
 function idleOnes(copies, options) {
-  return filtered(copies, options).filter(copy => copy.idleMs !== null && copy.idleMs >= options.idleMs && (options['include-latest'] || !copy.latest));
+  return filtered(copies, options).filter(copy => copy.measured && copy.idleMs !== null && copy.idleMs >= options.idleMs
+    && (options['include-latest'] || !copy.latest) && (!copy.orphan || copy.confirmed));
 }
 
 const agentLabel = copy => (copy.host ? `${copy.agent} in ${copy.host}` : copy.agent);
@@ -172,11 +189,12 @@ export function render(copies, { color = false, numbered = false } = {}) {
   const lines = [];
   const groups = new Map();
   for (const copy of [...copies].sort((a, b) => a.start - b.start)) {
-    const key = copy.orphan ? 'orphans' : `${copy.agent}/${copy.agentPid}`;
+    const key = !copy.orphan ? `${copy.agent}/${copy.agentPid}` : copy.confirmed ? 'orphans' : 'suspects';
     if (!groups.has(key)) groups.set(key, []);
     groups.get(key).push(copy);
   }
-  const ordered = [...groups.entries()].sort(([a], [b]) => (a === 'orphans') - (b === 'orphans') || a.localeCompare(b));
+  const rank = key => ({ orphans: 1, suspects: 2 })[key] ?? 0;
+  const ordered = [...groups.entries()].sort(([a], [b]) => rank(a) - rank(b) || a.localeCompare(b));
   const nameWidth = Math.max(6, ...copies.map(copy => width(copy.name)));
   // "(latest)" marks the conversation kept when others of the same app are not.
   const app = copy => `${copy.agent}|${copy.host ?? ''}`;
@@ -186,13 +204,14 @@ export function render(copies, { color = false, numbered = false } = {}) {
   for (const [key, group] of ordered) {
     const memory = formatBytes(group.reduce((sum, copy) => sum + copy.memoryBytes, 0));
     const count = `${group.length} server${group.length === 1 ? '' : 's'}`;
-    lines.push(key === 'orphans'
-      ? s.bold(`Orphans, left running by an agent that exited: ${count}, ${memory}`)
-      : s.bold(`${agentLabel(group[0])} (pid ${group[0].agentPid}): ${count}, ${memory}`));
+    const orphans = rank(key) > 0;
+    lines.push(s.bold(key === 'orphans' ? `Orphans, left running by an agent that exited: ${count}, ${memory}`
+      : key === 'suspects' ? `Possibly left behind (never seen with their agent): ${count}, ${memory}`
+        : `${agentLabel(group[0])} (pid ${group[0].agentPid}): ${count}, ${memory}`));
     const conversations = new Map();
     for (const copy of group) {
-      const label = key === 'orphans' ? '' : conversationLabel(copy);
-      const id = key === 'orphans' ? '' : `${copy.conversation?.id ?? label}`;
+      const label = orphans ? '' : conversationLabel(copy);
+      const id = orphans ? '' : `${copy.conversation?.id ?? label}`;
       if (!conversations.has(id)) conversations.set(id, { label, copies: [] });
       conversations.get(id).copies.push(copy);
     }
@@ -253,7 +272,13 @@ async function stop(copies, options, io) {
 }
 
 async function stopCommand(options, io) {
-  const copies = await check({ env: io.env });
+  let copies = await check({ env: io.env });
+  // Idle means no work between two checks; look again shortly if this is the
+  // first look at some servers.
+  if (options.idleMs !== undefined && filtered(copies, options).some(copy => !copy.measured)) {
+    await new Promise(resolve => setTimeout(resolve, 3000));
+    copies = await check({ env: io.env });
+  }
   const color = Boolean(io.stdout.isTTY) && !io.env.NO_COLOR;
   const interactive = Boolean(io.stdin.isTTY && io.stdout.isTTY);
   const out = text => io.stdout.write(`${text}\n`);
@@ -268,7 +293,7 @@ async function stopCommand(options, io) {
   } else if (options.idleMs !== undefined || options.orphans) {
     chosen = options.idleMs !== undefined ? idleOnes(copies, options) : filtered(copies, options);
     if (!chosen.length) {
-      const kept = options.idleMs !== undefined ? filtered(copies, options).filter(copy => copy.latest && copy.idleMs >= options.idleMs) : [];
+      const kept = options.idleMs !== undefined ? filtered(copies, options).filter(copy => copy.latest && copy.measured && copy.idleMs >= options.idleMs) : [];
       out(kept.length
         ? `Nothing to stop. ${kept.length} idle server${kept.length === 1 ? ' belongs' : 's belong'} to the latest conversation of ${kept.length === 1 ? 'its app' : 'their apps'}; add --include-latest to stop ${kept.length === 1 ? 'it' : 'them'} too.`
         : 'Nothing to stop.');
@@ -324,9 +349,9 @@ async function listCommand(options, io) {
   const copies = filtered(await check({ env: io.env }), options);
   if (options.json) {
     io.stdout.write(`${JSON.stringify(copies.map(copy => ({
-      name: copy.name, agent: copy.agent, host: copy.host, agentPid: copy.agentPid, orphan: copy.orphan, latest: copy.latest,
+      name: copy.name, agent: copy.agent, host: copy.host, agentPid: copy.agentPid, orphan: copy.orphan, confirmed: copy.confirmed, latest: copy.latest,
       pid: copy.root.pid, processes: copy.processes.map(p => p.pid), started: new Date(copy.start).toISOString(), memoryBytes: copy.memoryBytes,
-      idleMs: copy.idleMs, lastUsed: copy.lastUsed === null ? null : new Date(copy.lastUsed).toISOString(),
+      idleMs: copy.idleMs, measured: copy.measured, lastUsed: copy.lastUsed === null ? null : new Date(copy.lastUsed).toISOString(),
       conversation: copy.conversation && { id: copy.conversation.id, title: copy.conversation.title, busy: copy.conversation.busy },
     })), null, 2)}\n`);
     return 0;

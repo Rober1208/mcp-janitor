@@ -14,6 +14,8 @@ const AGENTS = [
   ['Gemini CLI', p => /@google[\\/]gemini-cli[\\/]/i.test(p.command)],
 ];
 
+export const AGENT_NAMES = [...AGENTS.map(([name]) => name), 'Other'];
+
 /** The agent a process is, if any. `extra` recognizes other agents by their command line. */
 export function agentOf(p, extra = null) {
   if (extra?.test(p.command)) return 'Other';
@@ -41,50 +43,51 @@ function hostOf(byPid, agentProcess) {
  */
 function isOrphan(p, parent, platform) {
   if (platform === 'win32') return !parent && p.ppid > 0;
-  // WSL gives each session a subreaper of its own, which shows as Relay(<pid>).
-  return p.ppid === 1 || Boolean(parent && (/^(systemd|launchd|init)$/.test(parent.name) || /^Relay\(\d+\)$/.test(parent.name)));
+  return p.ppid === 1 || Boolean(parent && /^(systemd|launchd|init)$/.test(parent.name));
 }
 
 const normalize = text => text.replace(/\\/g, '/').replace(/["']/g, '').toLowerCase();
 const escape = text => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-// A placeholder that was not expanded, such as ${user_config.key}, matches anything.
-const fragments = text => normalize(text).split(/\$\{[^}]*\}/).filter(Boolean);
+const PLACEHOLDERS = /\$\{[^}]*\}/g;
 const EXTENSIONS = 'cmd|exe|bat|ps1|js|mjs|cjs';
 // Programs that say nothing about which server they run.
 const GENERIC = /^(node|nodejs|bun|bunx|deno|npx|npm|pnpm|pnpx|yarn|python|python3|py|pythonw|uv|uvx|pipx|java|dotnet|ruby|php|cmd|powershell|pwsh|bash|sh|zsh|docker)$/;
 
-/** Whether a command line starts the configured server: its program, then its arguments in order. */
+/**
+ * Whether a command line starts the configured server: its program, then its
+ * arguments in order, each one whole words of the command line. A
+ * placeholder that was not expanded, such as ${user_config.key}, stands for
+ * anything inside an argument; a program that is still a placeholder could be
+ * anything, so it matches nothing.
+ */
 export function matchesServer(command, server) {
+  if (/\$\{/.test(server.command)) return false;
   const line = normalize(command);
   const program = normalize(server.command);
-  const args = server.args.flatMap(fragments);
+  const args = server.args.map(normalize).filter(arg => arg.replace(PLACEHOLDERS, ''));
   const base = path.posix.basename(program).replace(new RegExp(`\\.(${EXTENSIONS})$`), '');
   // A bare interpreter would match every program it runs.
-  if (GENERIC.test(base) && !args.some(arg => !arg.startsWith('-'))) return false;
-  let at = -1;
-  if (program.includes('${')) {
-    at = 0;
-    for (const part of fragments(server.command)) {
-      const found = line.indexOf(part, at);
-      if (found < 0) return false;
-      at = found + part.length;
-    }
-  } else if (program.includes('/') && line.includes(program)) {
-    at = line.indexOf(program) + program.length;
-  } else {
-    // A program found on PATH, possibly run with an extension (npx.cmd), or
-    // the script behind it (npx-cli.js).
-    const match = new RegExp(`(^|[\\s/])${escape(base)}(-cli)?(\\.(${EXTENSIONS}))?(?=\\s|$)`).exec(line);
-    if (match) at = match.index + match[0].length;
-    // Claude Desktop runs Node.js extensions with its own executable; the
-    // full path of the script is enough to know the server.
-    else if (/^([a-z]:)?\/.+\.(c|m)?js$/.test(args[0] ?? '')) at = 0;
-    else return false;
-  }
+  if (GENERIC.test(base) && !args.some(arg => !arg.startsWith('-') && arg.replace(PLACEHOLDERS, '').length >= 2)) return false;
+  const find = (source, from, left = '^|\\s') => {
+    const pattern = new RegExp(`(?<=${left})(?:${source})(?=\\s|$)`, 'g');
+    pattern.lastIndex = from;
+    return pattern.exec(line);
+  };
+  // A program given by its path must be that path; one found on PATH may
+  // carry an extension (npx.cmd) or be the script behind it (npx-cli.js).
+  const found = program.includes('/')
+    ? find(`${escape(program)}(?:\\.(?:${EXTENSIONS}))?`, 0)
+    : find(`${escape(base)}(?:-cli)?(?:\\.(?:${EXTENSIONS}))?`, 0, '^|\\s|/');
+  let at;
+  if (found) at = found.index + found[0].length;
+  // Claude Desktop runs Node.js extensions with its own executable; the full
+  // path of the script is enough to know the server.
+  else if (/^([a-z]:)?\/[^$]+\.(c|m)?js$/.test(args[0] ?? '')) at = 0;
+  else return false;
   for (const arg of args) {
-    const found = line.indexOf(arg, at);
-    if (found < 0) return false;
-    at = found + arg.length;
+    const next = find(arg.split(/\$\{[^}]*\}/).map(escape).join('.*?'), at);
+    if (!next) return false;
+    at = next.index + next[0].length;
   }
   return true;
 }
@@ -107,30 +110,39 @@ const programName = command => path.posix.basename(command.replace(/\\/g, '/'));
 // whether the agent still uses the server.
 const BROWSERS = /^(chrome|msedge|chromium|chromium-browser|firefox|headless_shell|google chrome|google chrome for testing|microsoft edge|brave)(\.exe)?$/i;
 
+/** The key that tells a process apart from a later one with the same PID. */
+export const processKey = p => `${p.pid}:${Math.round(p.start)}`;
+
 /**
  * Find the running copies of configured MCP servers and the agent each
- * belongs to. A server is a copy when its agent started it directly; a copy
- * whose agent has exited is an orphan. Each copy:
- * { key, name, agent, host, agentPid, agentStart, orphan, latest, root,
- *   processes, start, memoryBytes, cpuMs, ioBytes }
+ * belongs to. A server is a copy when its agent started it directly with a
+ * command from that agent's configuration. A copy whose agent has exited is
+ * an orphan: `confirmed` when an earlier check saw it with its agent (from
+ * `known`, the records of earlier checks), not when it only looks left
+ * behind. Each copy:
+ * { key, name, agent, host, agentPid, agentStart, orphan, confirmed, latest,
+ *   root, processes, start, memoryBytes, cpuMs, ioBytes }
  * where cpuMs and ioBytes leave out browsers that the server drives.
  */
-export function findCopies(processes, servers, { extraAgents = null, platform = process.platform, self = process.pid } = {}) {
+export function findCopies(processes, servers, { extraAgents = null, platform = process.platform, self = process.pid, known = {} } = {}) {
   const byPid = new Map(processes.map(p => [p.pid, p]));
   const agents = new Map();
   for (const p of processes) {
     const agent = agentOf(p, extraAgents);
     if (agent) agents.set(p.pid, agent);
   }
+  // Each agent starts the servers of its own configuration. VS Code and
+  // Cursor can also start servers they find in other apps' files.
+  const serversOf = agent => (agent === 'VS Code' || agent === 'Cursor' ? servers : servers.filter(s => s.agent === agent || s.agent === 'Other'));
   const copies = [];
-  const add = (root, name, agentProcess, orphan, configuredFor) => {
+  const add = (root, name, agentProcess, { orphan = false, confirmed = true, agent = null } = {}) => {
     const tree = subtree(processes, root);
     const watched = subtree(processes, root, p => !BROWSERS.test(p.name));
     copies.push({
-      key: `${root.pid}:${Math.round(root.start)}`, name,
-      agent: agentProcess ? agents.get(agentProcess.pid) : configuredFor,
+      key: processKey(root), name,
+      agent: agentProcess ? agents.get(agentProcess.pid) : agent,
       host: agentProcess ? hostOf(byPid, agentProcess) : null,
-      agentPid: agentProcess?.pid ?? null, agentStart: agentProcess?.start ?? null, orphan, latest: false,
+      agentPid: agentProcess?.pid ?? null, agentStart: agentProcess?.start ?? null, orphan, confirmed, latest: false,
       root: { pid: root.pid, start: root.start }, processes: tree.map(p => ({ pid: p.pid, start: p.start })), start: root.start,
       memoryBytes: tree.reduce((sum, p) => sum + (p.memoryBytes || 0), 0),
       cpuMs: watched.reduce((sum, p) => sum + (p.cpuMs || 0), 0),
@@ -141,27 +153,33 @@ export function findCopies(processes, servers, { extraAgents = null, platform = 
   for (const p of processes) {
     if (agents.has(p.pid) || p.pid === self) continue;
     const parent = parentOf(byPid, p);
-    // Only what an agent started itself: the commands an agent runs for you
-    // go through a shell, and are not its servers.
-    const agentProcess = parent && agents.has(parent.pid) ? parent : null;
-    const orphan = !agentProcess && isOrphan(p, parent, platform);
-    if (!agentProcess && !orphan) continue;
-    const agent = agentProcess ? agents.get(agentProcess.pid) : null;
+    const record = known[processKey(p)];
     // A shell command whose text names a server is still a shell command,
     // unless the server itself is configured to start through that shell.
     const fits = s => matchesServer(p.command, s) && (!RUNNERS.test(p.name) || RUNNERS.test(programName(s.command)));
-    const server = (agent && servers.find(s => s.agent === agent && fits(s))) || servers.find(fits);
-    if (server) add(p, server.name, agentProcess, orphan, server.agent);
+    if (parent && agents.has(parent.pid)) {
+      // Only what an agent started itself.
+      const server = serversOf(agents.get(parent.pid)).find(fits);
+      if (server) add(p, server.name, parent);
+      // Seen before as this agent's server, under a name since taken out of the configuration.
+      else if (record?.confirmed && record.agentPid === parent.pid) add(p, record.name, parent);
+    } else if (record?.confirmed) {
+      // Seen with its agent before; that agent is gone now.
+      add(p, record.name, null, { orphan: true, agent: record.agent });
+    } else if (isOrphan(p, parent, platform)) {
+      const server = servers.find(fits);
+      if (server) add(p, server.name, null, { orphan: true, confirmed: false, agent: server.agent });
+    }
   }
 
   // Codex starts all servers of a conversation at once. A process it started
-  // together with known servers is one of them, even when no configuration
-  // names it (a plugin that brings its own runtime).
+  // in the same instant as known servers is one of them, even when no
+  // configuration names it (a plugin that brings its own runtime).
   for (const p of processes) {
     const parent = parentOf(byPid, p);
     if (!parent || agents.get(parent.pid) !== 'Codex' || agents.has(p.pid) || RUNNERS.test(p.name) || /^(cmd|conhost|openconsole|codex.*)(\.exe)?$/i.test(p.name)) continue;
     if (copies.some(copy => copy.root.pid === p.pid)) continue;
-    if (copies.some(copy => copy.agentPid === parent.pid && Math.abs(copy.start - p.start) <= 2000)) add(p, derivedName(p.command), parent, false, 'Codex');
+    if (copies.some(copy => copy.agentPid === parent.pid && Math.abs(copy.start - p.start) <= 500)) add(p, derivedName(p.command), parent);
   }
 
   return copies;

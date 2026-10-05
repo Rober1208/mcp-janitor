@@ -37,7 +37,8 @@ mcp-janitor watch --idle 1h    # 持續檢查，閒置滿一小時就關
 ```
 
 用 `--idle` 或 `--orphans` 時，`stop` 會先列出要關的項目並詢問；在腳本裡可加 `--yes` 跳過詢問，
-或用 `--dry-run` 只看不關。任何指令都能用 `--agent codex`、`--agent "claude code"` 或 `--server playwright` 縮小範圍。
+或用 `--dry-run` 只看不關。任何指令都能用 `--server playwright` 縮小範圍，或用 `--agent` 加上
+`codex`、`"claude code"`、`"claude desktop"`、`cursor`、`vscode`、`gemini` 其中之一。
 
 **預設不會動到你正在用的對話。** 在每個 app 裡（ChatGPT app、VS Code、終端機裡的 Claude Code……），
 你最後用的那個對話即使閒置也會保留，因為你可能隨時回來繼續。加上 `--include-latest` 才會一起關。
@@ -73,9 +74,14 @@ Start-Process -WindowStyle Minimized npx 'mcp-janitor watch --idle 1h'   # Windo
 ## 運作方式
 
 **怎麼判斷哪些程序是 MCP server。** mcp-janitor 先讀你替各 agent 設定的 MCP server，
-再找由 agent *直接*用這些指令啟動的程序。agent 替你執行的指令都會經過 shell，
-所以你請 Codex 跑的 `node server.js` 不會被誤認成 MCP。agent 已經結束、被留下來的 server
-叫做孤兒（orphan），已經沒有任何東西能跟它溝通。
+再找由 agent *直接*啟動、指令和它自己設定裡的某一筆逐字相符的程序。agent 替你執行的指令通常會經過 shell，
+而 shell 永遠不會被當成 MCP。Codex 還會啟動一些沒寫在設定檔裡的插件 server；
+只有和同一個對話的其他 server 在同一瞬間啟動的程序，才會被算成其中之一。
+
+**孤兒程序。** agent 已經結束、被留下來的 server 叫做孤兒（orphan），已經沒有任何東西能跟它溝通。
+只有在之前的檢查中看過它跟著 agent 的，mcp-janitor 才確定它是孤兒，也只有這種會被 `--orphans`、`--idle`、`watch` 關掉。
+只是「看起來」被留下的程序（跑的是設定裡的 server 指令、父程序已經不在）會分開列出，
+只有你親自挑選或指定 PID 時才會關。
 
 **怎麼知道是哪個對話開的。** Claude Code 會在 `~/.claude/sessions/<pid>.json` 記錄每個程序正在跑的對話。
 Codex 的 thread ID 是 UUIDv7，本身帶有建立時間，重新打開舊對話時 Codex 也會寫進 log；
@@ -87,6 +93,7 @@ Claude Desktop 則是所有對話共用同一份 server。
 閒置時間從兩者中較晚的那個算起，也就是兩邊都沒動靜才算閒置。
 server 操控的瀏覽器（Playwright、Puppeteer）在背景的動作不算 server 在忙。
 從沒看過、也對不到對話的 server 會顯示 `–`，下次檢查才有數字。
+沒有被檢查過兩次的 server 不會因為閒置被關：`stop --idle` 第一次看到某個 server 時，會在三秒後再看一次。
 
 **怎麼關。** 送出訊號前，mcp-janitor 會確認那個 PID 仍然是清單上的同一個程序。
 Linux 和 macOS 先送 SIGTERM，三秒後還在才送 SIGKILL；Windows 直接結束程序。

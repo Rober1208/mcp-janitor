@@ -8,6 +8,11 @@ import { codexServers, configuredServers, readJson } from '../src/configs.js';
 test('Codex config.toml: tables, inline tables, dotted keys and arrays across lines', () => {
   const servers = codexServers(`
 model = "gpt-5" # a comment
+developer_instructions = """
+Keep answers short. An unbalanced [ or { in here,
+and a "quoted" # that is not a comment.
+"""
+notes = '''raw [ text'''
 mcp_servers.dotted.command = "dotted-server"
 
 [mcp_servers.playwright]
@@ -28,6 +33,10 @@ args = ["--path", "C:\\\\data # not a comment"]
 [mcp_servers]
 inline = { command = "uvx", args = ["mcp-server-fetch"], env = { A = "1" } }
 
+[mcp_servers.multi]
+command = """multi-server"""
+args = ['''--root''', "C:\\\\x"]
+
 [profiles.work]
 model = "other"
 `);
@@ -38,7 +47,8 @@ model = "other"
   assert.deepEqual(servers['quoted.name'].args, ['--path', 'C:\\data # not a comment']);
   assert.deepEqual(servers.inline, { command: 'uvx', args: ['mcp-server-fetch'], env: { A: '1' } });
   assert.equal(servers.dotted.command, 'dotted-server');
-  assert.deepEqual(Object.keys(servers).sort(), ['dotted', 'inline', 'playwright', 'quoted.name']);
+  assert.deepEqual(servers.multi, { command: 'multi-server', args: ['--root', 'C:\\x'] });
+  assert.deepEqual(Object.keys(servers).sort(), ['dotted', 'inline', 'multi', 'playwright', 'quoted.name']);
 });
 
 test('JSON with a byte order mark, comments and trailing commas', t => {

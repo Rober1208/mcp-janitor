@@ -37,14 +37,14 @@ mcp-janitor                    # list MCP servers by agent and conversation
 mcp-janitor stop               # pick servers to stop from a numbered list
 mcp-janitor stop 4180 5236     # stop these servers (PIDs from the list)
 mcp-janitor stop --idle 1h     # stop servers idle for an hour or more
-mcp-janitor stop --orphans     # stop servers whose agent has exited
+mcp-janitor stop --orphans     # stop servers left running by an agent that exited
 mcp-janitor watch --idle 1h    # keep checking, stop servers once idle that long
 ```
 
 With `--idle` or `--orphans`, `stop` lists what it is about to stop and asks
 first; add `--yes` to skip the question in scripts, or `--dry-run` to only
-look. Narrow any command with `--agent codex`, `--agent "claude code"` or
-`--server playwright`.
+look. Narrow any command with `--server playwright` or `--agent` followed by
+`codex`, `"claude code"`, `"claude desktop"`, `cursor`, `vscode` or `gemini`.
 
 **Your current conversation is safe by default.** In each app (the ChatGPT
 app, VS Code, Claude Code in a terminal, ...) the conversation you used last
@@ -83,10 +83,18 @@ Start-Process -WindowStyle Minimized npx 'mcp-janitor watch --idle 1h'   # Windo
 
 **Which processes are MCP servers.** mcp-janitor reads the MCP servers you
 configured for each agent, then looks for processes that an agent started
-*directly* with one of those commands. Commands an agent runs for you go
-through a shell, so a `node server.js` you asked Codex to run is never taken
-for a server. A server whose agent has exited is an orphan: nothing can talk
-to it anymore.
+*directly* with one of the commands in its own configuration, word for word.
+Commands an agent runs for you usually go through a shell, and a shell is
+never taken for a server. Codex also starts plugin servers that no config
+file names; a process counts as one of them only when Codex started it in
+the same instant as the rest of that conversation's servers.
+
+**Orphans.** A server whose agent has exited is an orphan: nothing can talk
+to it anymore. mcp-janitor is sure of that when an earlier check saw the
+server with its agent, and only those orphans are stopped by `--orphans`,
+`--idle` and `watch`. A process that merely looks left behind (it runs a
+configured server command and its parent is gone) is listed apart, and
+stopped only when you pick it or name its PID.
 
 **Which conversation started it.** Claude Code records the conversation each
 of its processes runs in `~/.claude/sessions/<pid>.json`. Codex thread IDs
@@ -102,7 +110,9 @@ a server used CPU or did any I/O. The idle time is measured from whichever is
 later, so a server counts as idle only when both are quiet. A browser that a
 server drives (Playwright, Puppeteer) does not count as the server being
 busy. A server mcp-janitor has never seen before, with no conversation to go
-by, shows `–` until the next check.
+by, shows `–` until the next check. Nothing is stopped for being idle before
+it was checked twice: the first time `stop --idle` sees a server, it looks
+again three seconds later.
 
 **Stopping.** Before it signals a process, mcp-janitor checks that the PID
 still belongs to the process it listed. On Linux and macOS a server gets

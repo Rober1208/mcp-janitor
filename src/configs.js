@@ -176,24 +176,53 @@ export function codexServers(text) {
   return servers;
 }
 
+// Where a multi-line string that opens at `start` ends: TOML lets up to two
+// more quotes before the closing three belong to the string.
+function tripleEnd(text, start) {
+  const quote = text.slice(start, start + 3);
+  let close = text.indexOf(quote, start + 3);
+  if (close < 0) return -1;
+  while (text[close + 3] === quote[0]) close++;
+  return close;
+}
+
 // Split TOML text into statements: comments removed, and an array or inline
-// table that spans several lines joined into one statement.
+// table that spans several lines joined into one statement. Strings,
+// multi-line ones too, are kept whole.
 function statements(text) {
   const result = [];
   let current = '';
-  for (const raw of text.split(/\r?\n/)) {
-    const line = stripComment(raw);
-    if (!current && !line.trim()) continue;
-    current += (current ? ' ' : '') + line.trim();
-    if (nesting(current) <= 0) { result.push(current); current = ''; }
+  let depth = 0;
+  const end = () => {
+    if (current.trim()) result.push(current.trim());
+    current = '';
+    depth = 0;
+  };
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (text.startsWith('"""', i) || text.startsWith("'''", i)) {
+      const close = tripleEnd(text, i);
+      const stop = close < 0 ? text.length : close + 3;
+      current += text.slice(i, stop);
+      i = stop - 1;
+    } else if (c === '"' || c === "'") {
+      let j = i + 1;
+      while (j < text.length && text[j] !== c && text[j] !== '\n') j += c === '"' && text[j] === '\\' ? 2 : 1;
+      current += text.slice(i, text[j] === c ? j + 1 : j);
+      i = text[j] === c ? j : j - 1;
+    } else if (c === '#') {
+      while (i + 1 < text.length && text[i + 1] !== '\n') i++;
+    } else if (c === '\n') {
+      if (depth <= 0) end();
+      else current += ' ';
+    } else if (c !== '\r') {
+      if (c === '[' || c === '{') depth++;
+      else if (c === ']' || c === '}') depth--;
+      current += c;
+    }
   }
-  if (current) result.push(current);
+  end();
   return result;
-}
-
-function stripComment(line) {
-  const hash = indexOutsideQuotes(line, '#');
-  return hash < 0 ? line : line.slice(0, hash);
 }
 
 function scan(text, visit) {
@@ -216,14 +245,6 @@ function indexOutsideQuotes(text, wanted) {
   return found;
 }
 
-function nesting(text) {
-  // A table header like [a.b] is complete on its own line.
-  if (/^\[/.test(text)) return 0;
-  let depth = 0;
-  scan(text, c => { if (c === '[' || c === '{') depth++; if (c === ']' || c === '}') depth--; });
-  return depth;
-}
-
 function keyPath(text) {
   const parts = [];
   let current = '';
@@ -238,22 +259,31 @@ function keyPath(text) {
   return parts;
 }
 
+const ESCAPES = { n: '\n', t: '\t', r: '\r', b: '\b', f: '\f', '"': '"', '\\': '\\' };
+const unescapeBasic = raw => raw.replace(/\\(u[0-9a-fA-F]{4}|U[0-9a-fA-F]{8}|[\s\S])/g,
+  (_, escape) => (escape.length > 1 ? String.fromCodePoint(parseInt(escape.slice(1), 16)) : ESCAPES[escape] ?? escape));
+
 function parseValue(text) {
   let i = 0;
   const space = () => { while (i < text.length && /\s/.test(text[i])) i++; };
   const value = () => {
     space();
     const c = text[i];
+    if (text.startsWith('"""', i) || text.startsWith("'''", i)) {
+      const close = tripleEnd(text, i);
+      if (close < 0) throw new Error('unterminated string');
+      // A newline right after the opening quotes is not part of the string.
+      const raw = text.slice(i + 3, close).replace(/^\r?\n/, '');
+      const literal = c === "'";
+      i = close + 3;
+      // In a basic string, a backslash at the end of a line joins it to the next.
+      return literal ? raw : unescapeBasic(raw.replace(/\\\s*\r?\n\s*/g, ''));
+    }
     if (c === '"') {
-      let out = '';
-      for (i++; i < text.length && text[i] !== '"'; i++) {
-        if (text[i] === '\\') {
-          const next = text[++i];
-          if (next === 'u' || next === 'U') { const n = next === 'u' ? 4 : 8; out += String.fromCodePoint(parseInt(text.slice(i + 1, i + 1 + n), 16)); i += n; }
-          else out += { n: '\n', t: '\t', r: '\r', b: '\b', f: '\f', '"': '"', '\\': '\\' }[next] ?? next;
-        } else out += text[i];
-      }
-      i++;
+      let end = i + 1;
+      while (end < text.length && text[end] !== '"') end += text[end] === '\\' ? 2 : 1;
+      const out = unescapeBasic(text.slice(i + 1, end));
+      i = end + 1;
       return out;
     }
     if (c === "'") {
