@@ -126,10 +126,6 @@ mcp-janitor 只讀本機檔案和程序清單，不會傳送任何資料。對�
 為了比較兩次檢查之間的活動，它會存一個小小的狀態檔：Windows 在 `%LOCALAPPDATA%\mcp-janitor`，
 macOS 在 `~/Library/Application Support/mcp-janitor`，Linux 在 `~/.local/state/mcp-janitor`。
 
-## 相關專案
-
-[treecap](https://github.com/Rober1208/treecap)：替整個程序樹設定記憶體上限來執行指令，結束時把它啟動的東西全部收掉。
-
 ## 授權
 
 [MIT](LICENSE)

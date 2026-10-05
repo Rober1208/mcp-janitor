@@ -152,11 +152,6 @@ activity between checks it keeps a small state file: `%LOCALAPPDATA%\mcp-janitor
 on Windows, `~/Library/Application Support/mcp-janitor` on macOS and
 `~/.local/state/mcp-janitor` on Linux.
 
-## Related
-
-[treecap](https://github.com/Rober1208/treecap) runs a command with a memory
-cap on its whole process tree, and stops everything it started when it ends.
-
 ## License
 
 [MIT](LICENSE)
