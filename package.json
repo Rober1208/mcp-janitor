@@ -1,0 +1,39 @@
+{
+  "name": "mcp-janitor",
+  "version": "0.1.0",
+  "description": "See which MCP servers your AI agents (Codex, Claude Code, Claude Desktop, Cursor, VS Code) keep running, per conversation, and stop the idle ones.",
+  "type": "module",
+  "bin": {
+    "mcp-janitor": "bin/mcp-janitor.js"
+  },
+  "files": [
+    "bin",
+    "src"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "node --test \"test/*.test.js\""
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "codex",
+    "claude-code",
+    "claude-desktop",
+    "cursor",
+    "ai-agents",
+    "memory",
+    "process-manager",
+    "cli"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Rober1208/mcp-janitor.git"
+  },
+  "homepage": "https://github.com/Rober1208/mcp-janitor#readme",
+  "bugs": "https://github.com/Rober1208/mcp-janitor/issues",
+  "author": "Rober1208",
+  "license": "MIT"
+}

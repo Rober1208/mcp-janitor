@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="540" viewBox="0 0 640 540">
+  <rect width="640" height="540" rx="10" fill="#0d1117"/>
+  <rect width="640" height="36" rx="10" fill="#161b22"/>
+  <rect y="26" width="640" height="10" fill="#161b22"/>
+  <circle cx="20" cy="18" r="6" fill="#ff5f56"/><circle cx="40" cy="18" r="6" fill="#ffbd2e"/><circle cx="60" cy="18" r="6" fill="#27c93f"/>
+  <text x="320" y="23" fill="#7d8590" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" text-anchor="middle">Codex app server · three conversations, opened two minutes apart</text>
+  <text font-family="Cascadia Mono, Consolas, Menlo, monospace" font-size="14" xml:space="preserve">
+    <tspan x="24" y="68"><tspan fill="#7ee787">$ </tspan><tspan fill="#e6edf3">npx mcp-janitor</tspan></tspan>
+    <tspan x="24" y="89"><tspan fill="#e6edf3" font-weight="bold">Codex (pid 48448): 12 servers, 1.6 GB</tspan></tspan>
+    <tspan x="24" y="110"><tspan fill="#e6edf3">  "Fix the flaky login test"</tspan></tspan>
+    <tspan x="24" y="131"><tspan fill="#e6edf3">      node_repl     19 MB  </tspan><tspan fill="#e3b341">idle 6m</tspan><tspan fill="#e6edf3">       </tspan><tspan fill="#7d8590">pid 7344</tspan></tspan>
+    <tspan x="24" y="152"><tspan fill="#e6edf3">      playwright   191 MB  </tspan><tspan fill="#e3b341">idle 6m</tspan><tspan fill="#e6edf3">       </tspan><tspan fill="#7d8590">pid 17376</tspan></tspan>
+    <tspan x="24" y="173"><tspan fill="#e6edf3">      obsidian     168 MB  </tspan><tspan fill="#e3b341">idle 6m</tspan><tspan fill="#e6edf3">       </tspan><tspan fill="#7d8590">pid 9652</tspan></tspan>
+    <tspan x="24" y="194"><tspan fill="#e6edf3">      drawio       159 MB  </tspan><tspan fill="#e3b341">idle 6m</tspan><tspan fill="#e6edf3">       </tspan><tspan fill="#7d8590">pid 62432</tspan></tspan>
+    <tspan x="24" y="215"><tspan fill="#e6edf3">  "Refactor the billing API"</tspan></tspan>
+    <tspan x="24" y="236"><tspan fill="#e6edf3">      node_repl     18 MB  </tspan><tspan fill="#e3b341">idle 4m</tspan><tspan fill="#e6edf3">       </tspan><tspan fill="#7d8590">pid 16548</tspan></tspan>
+    <tspan x="24" y="257"><tspan fill="#e6edf3">      obsidian     167 MB  </tspan><tspan fill="#e3b341">idle 4m</tspan><tspan fill="#e6edf3">       </tspan><tspan fill="#7d8590">pid 34912</tspan></tspan>
+    <tspan x="24" y="278"><tspan fill="#e6edf3">      drawio       159 MB  </tspan><tspan fill="#e3b341">idle 4m</tspan><tspan fill="#e6edf3">       </tspan><tspan fill="#7d8590">pid 30028</tspan></tspan>
+    <tspan x="24" y="299"><tspan fill="#e6edf3">      playwright   190 MB  </tspan><tspan fill="#e3b341">idle 4m</tspan><tspan fill="#e6edf3">       </tspan><tspan fill="#7d8590">pid 38572</tspan></tspan>
+    <tspan x="24" y="320"><tspan fill="#e6edf3">  "Draft the 0.4 release notes"</tspan><tspan fill="#7d8590">  (latest)</tspan></tspan>
+    <tspan x="24" y="341"><tspan fill="#e6edf3">      playwright   190 MB  </tspan><tspan fill="#e3b341">idle 2m</tspan><tspan fill="#e6edf3">       </tspan><tspan fill="#7d8590">pid 7856</tspan></tspan>
+    <tspan x="24" y="362"><tspan fill="#e6edf3">      drawio       158 MB  </tspan><tspan fill="#e3b341">idle 2m</tspan><tspan fill="#e6edf3">       </tspan><tspan fill="#7d8590">pid 58848</tspan></tspan>
+    <tspan x="24" y="383"><tspan fill="#e6edf3">      obsidian     168 MB  </tspan><tspan fill="#e3b341">idle 2m</tspan><tspan fill="#e6edf3">       </tspan><tspan fill="#7d8590">pid 5360</tspan></tspan>
+    <tspan x="24" y="404"><tspan fill="#e6edf3">      node_repl     18 MB  </tspan><tspan fill="#e3b341">idle 2m</tspan><tspan fill="#e6edf3">       </tspan><tspan fill="#7d8590">pid 6220</tspan></tspan>
+    <tspan x="24" y="425"><tspan fill="#e6edf3"></tspan></tspan>
+    <tspan x="24" y="446"><tspan fill="#e6edf3">Total: 12 servers, 1.6 GB.</tspan></tspan>
+    <tspan x="24" y="467"><tspan fill="#e6edf3"></tspan></tspan>
+    <tspan x="24" y="488"><tspan fill="#7ee787">$ </tspan><tspan fill="#e6edf3">npx mcp-janitor stop --idle 3m --agent codex --yes</tspan></tspan>
+    <tspan x="24" y="509"><tspan fill="#3fb950">Stopped 8 servers, 1.0 GB.</tspan></tspan>
+  </text>
+</svg>
