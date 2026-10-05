@@ -119,6 +119,7 @@ Linux 和 macOS 先送 SIGTERM，三秒後還在才送 SIGKILL；Windows 直接�
 測試套件會在 Windows、Linux、macOS 上跑真實程序。Cursor、VS Code、Gemini CLI 依官方文件的設定檔位置讀取，
 但還沒在實際安裝上試過。如果你的電腦上漏抓或抓錯，歡迎
 [開 issue](https://github.com/Rober1208/mcp-janitor/issues) 並附上 `mcp-janitor --json` 的輸出。
+輸出裡有你的對話標題，不想公開的請先換掉。
 
 ## 隱私
 

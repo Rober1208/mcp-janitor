@@ -5,7 +5,7 @@
   <circle cx="20" cy="18" r="6" fill="#ff5f56"/><circle cx="40" cy="18" r="6" fill="#ffbd2e"/><circle cx="60" cy="18" r="6" fill="#27c93f"/>
   <text x="320" y="23" fill="#7d8590" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" text-anchor="middle">Codex app server · three conversations, opened two minutes apart</text>
   <text font-family="Cascadia Mono, Consolas, Menlo, monospace" font-size="14" xml:space="preserve">
-    <tspan x="24" y="68"><tspan fill="#7ee787">$ </tspan><tspan fill="#e6edf3">npx mcp-janitor</tspan></tspan>
+    <tspan x="24" y="68"><tspan fill="#7ee787">$ </tspan><tspan fill="#e6edf3">mcp-janitor</tspan></tspan>
     <tspan x="24" y="89"><tspan fill="#e6edf3" font-weight="bold">Codex (pid 48448): 12 servers, 1.6 GB</tspan></tspan>
     <tspan x="24" y="110"><tspan fill="#e6edf3">  "Fix the flaky login test"</tspan></tspan>
     <tspan x="24" y="131"><tspan fill="#e6edf3">      node_repl     19 MB  </tspan><tspan fill="#e3b341">idle 6m</tspan><tspan fill="#e6edf3">       </tspan><tspan fill="#7d8590">pid 7344</tspan></tspan>
@@ -25,7 +25,7 @@
     <tspan x="24" y="425"><tspan fill="#e6edf3"></tspan></tspan>
     <tspan x="24" y="446"><tspan fill="#e6edf3">Total: 12 servers, 1.6 GB.</tspan></tspan>
     <tspan x="24" y="467"><tspan fill="#e6edf3"></tspan></tspan>
-    <tspan x="24" y="488"><tspan fill="#7ee787">$ </tspan><tspan fill="#e6edf3">npx mcp-janitor stop --idle 3m --agent codex --yes</tspan></tspan>
+    <tspan x="24" y="488"><tspan fill="#7ee787">$ </tspan><tspan fill="#e6edf3">mcp-janitor stop --idle 3m --agent codex --yes</tspan></tspan>
     <tspan x="24" y="509"><tspan fill="#3fb950">Stopped 8 servers, 1.0 GB.</tspan></tspan>
   </text>
 </svg>

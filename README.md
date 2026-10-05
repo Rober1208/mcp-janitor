@@ -142,7 +142,8 @@ Windows, Linux and macOS. Cursor, VS Code and Gemini CLI are read from their
 documented config files but have not been tried against a live install yet.
 If something is missing or wrong on your machine, please
 [open an issue](https://github.com/Rober1208/mcp-janitor/issues) with the
-output of `mcp-janitor --json`.
+output of `mcp-janitor --json`. It includes your conversation titles: replace
+any you would rather not post.
 
 ## Privacy
 

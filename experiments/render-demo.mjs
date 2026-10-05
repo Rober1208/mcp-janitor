@@ -6,8 +6,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 const dir = process.argv[2];
-const list = fs.readFileSync(path.join(dir, 'list.txt'), 'utf8').trimEnd().split('\n').map(line => line.replace(/^\$ mcp-janitor/, '$ npx mcp-janitor'));
-const stop = fs.readFileSync(path.join(dir, 'stop.txt'), 'utf8').trimEnd().split('\n').map(line => line.replace(/^\$ mcp-janitor/, '$ npx mcp-janitor'));
+const list = fs.readFileSync(path.join(dir, 'list.txt'), 'utf8').trimEnd().split('\n');
+const stop = fs.readFileSync(path.join(dir, 'stop.txt'), 'utf8').trimEnd().split('\n');
 const lines = [...list, '', ...stop];
 
 const color = { text: '#e6edf3', dim: '#7d8590', yellow: '#e3b341', green: '#3fb950', prompt: '#7ee787' };
