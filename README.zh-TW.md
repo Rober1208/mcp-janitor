@@ -1,6 +1,5 @@
 # mcp-janitor
 
-[![npm](https://img.shields.io/npm/v/mcp-janitor)](https://www.npmjs.com/package/mcp-janitor)
 [![CI](https://github.com/Rober1208/mcp-janitor/actions/workflows/ci.yml/badge.svg)](https://github.com/Rober1208/mcp-janitor/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
@@ -19,11 +18,15 @@ Codex 每開一個對話，就把你設定的 MCP server 全部再啟動一份�
 共 5.6 GB，全部閒置。Claude Code 也是每個 session 各開一份。
 
 ```bash
-npx mcp-janitor
+npx github:Rober1208/mcp-janitor
 ```
 
-不用安裝、沒有相依套件、不用設定：它直接讀各個 agent 本來就有的 MCP 設定。
-支援 Windows、Linux（含 WSL）和 macOS，需要 Node.js 22 以上。
+沒有相依套件、不用設定：它直接讀各個 agent 本來就有的 MCP 設定。
+支援 Windows、Linux（含 WSL）和 macOS，需要 Node.js 22 以上和 Git。想隨時直接打 `mcp-janitor`：
+
+```bash
+npm install -g github:Rober1208/mcp-janitor
+```
 
 ## 用法
 
@@ -64,11 +67,11 @@ Checking MCP servers every 1m. Servers idle for 1h or more will be stopped, exce
 可以開在一個不關的終端機裡，或放到背景：
 
 ```bash
-nohup npx mcp-janitor watch --idle 1h > ~/mcp-janitor.log 2>&1 &   # Linux、macOS
+nohup mcp-janitor watch --idle 1h > ~/mcp-janitor.log 2>&1 &   # Linux、macOS
 ```
 
 ```powershell
-Start-Process -WindowStyle Minimized npx 'mcp-janitor watch --idle 1h'   # Windows
+Start-Process -WindowStyle Minimized mcp-janitor 'watch --idle 1h'   # Windows
 ```
 
 ## 運作方式

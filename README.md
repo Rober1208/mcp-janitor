@@ -1,6 +1,5 @@
 # mcp-janitor
 
-[![npm](https://img.shields.io/npm/v/mcp-janitor)](https://www.npmjs.com/package/mcp-janitor)
 [![CI](https://github.com/Rober1208/mcp-janitor/actions/workflows/ci.yml/badge.svg)](https://github.com/Rober1208/mcp-janitor/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
@@ -23,12 +22,16 @@ servers, 11 of everything else, 5.6 GB, all idle. Claude Code starts a set
 for every session in the same way.
 
 ```bash
-npx mcp-janitor
+npx github:Rober1208/mcp-janitor
 ```
 
-No install, no dependencies, nothing to configure: it reads the MCP settings
-your agents already have. Works on Windows, Linux (including WSL) and macOS
-with Node.js 22 or later.
+No dependencies, nothing to configure: it reads the MCP settings your agents
+already have. Works on Windows, Linux (including WSL) and macOS with Node.js
+22 or later and Git. To have the `mcp-janitor` command at hand:
+
+```bash
+npm install -g github:Rober1208/mcp-janitor
+```
 
 ## Usage
 
@@ -72,11 +75,11 @@ Checking MCP servers every 1m. Servers idle for 1h or more will be stopped, exce
 Start it in a terminal you keep open, or in the background:
 
 ```bash
-nohup npx mcp-janitor watch --idle 1h > ~/mcp-janitor.log 2>&1 &   # Linux, macOS
+nohup mcp-janitor watch --idle 1h > ~/mcp-janitor.log 2>&1 &   # Linux, macOS
 ```
 
 ```powershell
-Start-Process -WindowStyle Minimized npx 'mcp-janitor watch --idle 1h'   # Windows
+Start-Process -WindowStyle Minimized mcp-janitor 'watch --idle 1h'   # Windows
 ```
 
 ## How it works
