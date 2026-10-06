@@ -50,6 +50,8 @@ with three conversations opened two minutes apart. No model was called.
 - The ChatGPT desktop app or Codex takes more memory the longer it runs, and
   only quitting it gives the memory back.
 - Closing or archiving a Codex thread does not end its MCP servers.
+- Within one long Codex task, another full set of the same servers appears
+  on every turn.
 - MCP servers keep running after you close Claude Code sessions, in a
   terminal or a VS Code tab.
 
@@ -58,7 +60,8 @@ On the machine this tool was written on, the ChatGPT desktop app had collected
 Upstream, this is [openai/codex#30408](https://github.com/openai/codex/issues/30408)
 (MCP server processes never cleaned up per thread),
 [#35485](https://github.com/openai/codex/issues/35485) (one `node_repl.exe`
-per thread on Windows) and [#38754](https://github.com/openai/codex/issues/38754);
+per thread on Windows) and [#38754](https://github.com/openai/codex/issues/38754)
+(servers started again on every turn of a task);
 Claude Code had [anthropics/claude-code#24649](https://github.com/anthropics/claude-code/issues/24649).
 
 ## Usage
@@ -115,6 +118,12 @@ Claude Code can (from `/mcp`), so among its sessions only the one you used last
 in each place (terminals, VS Code, the Claude app) is kept. With `--idle`, add
 `--include-latest` to stop those too.
 
+When an agent starts a conversation's servers again while the old ones keep
+running, as Codex does on every turn of some tasks, only the newest copy of
+each server is kept. The older copies are marked `(replaced)`: the agent no
+longer talks to them, so they count as idle from the moment they were
+replaced, however busy the conversation is.
+
 ### What happens to a conversation whose servers you stop
 
 | Agent | After a server is stopped |
@@ -150,6 +159,12 @@ keeps running?** Run `mcp-janitor stop --idle 1h`. It shows the servers of
 conversations idle for an hour or more and asks before stopping them. The
 conversation you used last in each Codex process keeps its servers. To keep
 doing it, run `mcp-janitor watch --idle 1h`.
+
+**Codex starts all the MCP servers again on every turn of a long task. Does it
+clean up the old copies?** Yes. Only the newest copy of each server is kept;
+the older ones are marked `(replaced)` in the list, and `mcp-janitor stop --idle
+10m` stops those that have been replaced for ten minutes or more, even while
+the task is still running.
 
 **How do I kill orphaned MCP servers left by Claude Code or another agent that
 exited?** Run `mcp-janitor stop --orphans`. It stops the servers it saw
@@ -211,7 +226,8 @@ and the agent's own conversation may be among them.
 | `agentPid` | The agent process that started it; `null` for orphans |
 | `pid`, `processes` | The server's PID, and the PIDs of it and every process it started |
 | `orphan`, `confirmed` | Its agent has exited; it was seen with its agent at an earlier check |
-| `latest` | It belongs to the conversation used last, which keeps its servers |
+| `latest` | It is the newest copy of a server of the conversation used last, which keeps its servers |
+| `replaced` | A newer copy of the same server runs for the same conversation, and the agent no longer uses this one |
 | `conversation` | `{ id, title, busy }`, or `null` when not known |
 | `memoryBytes` | Working set of the server and the processes it started |
 | `idleMs`, `measured`, `lastUsed` | Idle time (`null` until known), whether an earlier check was compared, when it was last used |
@@ -244,7 +260,8 @@ server for all its conversations.
 
 **How long it has been idle.** An agent only calls MCP servers while it works
 on the conversation, so a server cannot have been used after its
-conversation was last active. Between checks, mcp-janitor also notes whether
+conversation was last active, nor after a newer copy of it replaced it.
+Between checks, mcp-janitor also notes whether
 a server used CPU or did any I/O. The idle time is measured from whichever is
 later, so a server counts as idle only when both are quiet. A browser that a
 server drives (Playwright, Puppeteer) does not count as the server being

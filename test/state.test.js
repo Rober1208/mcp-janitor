@@ -51,6 +51,18 @@ test('a quiet conversation bounds when its servers were last used', t => {
   assert.equal(copies[2].idleMs, 0);
 });
 
+test('a copy replaced by a newer one is idle since then, however busy its conversation', t => {
+  const at = file(t);
+  const busy = { lastActivity: 64 * MINUTE, busy: true };
+  const first = [copy('1:0', { start: 2 * MINUTE, conversation: busy, replacedAt: 20 * MINUTE })];
+  track(first, { file: at, now: 65 * MINUTE });
+  assert.equal(first[0].idleMs, 45 * MINUTE);
+  // Work seen between checks still counts: then it is not idle after all.
+  const later = [copy('1:0', { start: 2 * MINUTE, cpuMs: 900, conversation: busy, replacedAt: 20 * MINUTE })];
+  track(later, { file: at, now: 70 * MINUTE });
+  assert.equal(later[0].idleMs, 0);
+});
+
 test('between checks, work shows as CPU time or I/O', t => {
   const at = file(t);
   track([copy('quiet:0'), copy('cpu:0'), copy('io:0'), copy('noise:0'), copy('mac:0', { ioBytes: null })], { file: at, now: 0 });

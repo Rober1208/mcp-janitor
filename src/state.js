@@ -36,7 +36,8 @@ const worked = (before, copy) => copy.cpuMs - before.cpuMs >= CPU_NOISE_MS
  * Two kinds of evidence count. A server reads and writes when it is called,
  * so CPU time or I/O since the last check means it was busy. And an agent
  * only calls servers while it works on the conversation, so a server cannot
- * have been used after its conversation was last active.
+ * have been used after its conversation was last active, nor after a newer
+ * copy replaced it (copy.replacedAt, from markLatest).
  */
 export function track(copies, { file = stateFile(), now = Date.now(), before = loadState(file) } = {}) {
   const after = {};
@@ -53,7 +54,9 @@ export function track(copies, { file = stateFile(), now = Date.now(), before = l
 
     const evidence = [];
     if (record.lastActive !== null) evidence.push(record.lastActive);
-    if (copy.conversation?.busy) evidence.push(now);
+    // The agent talks to the newer copy, however busy the conversation is.
+    if (copy.replacedAt) evidence.push(copy.replacedAt);
+    else if (copy.conversation?.busy) evidence.push(now);
     else if (copy.conversation?.lastActivity) evidence.push(copy.conversation.lastActivity);
     // Seen before and quiet ever since: idle at least since that first look.
     else if (previous) evidence.push(record.firstSeen);

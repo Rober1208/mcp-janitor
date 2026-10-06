@@ -39,13 +39,14 @@ npm install -g github:Rober1208/mcp-janitor#v0.1.2
   server 開了好幾份，而且每開一個新的 Codex 對話就多一組。
 - ChatGPT 桌面版或 Codex 開越久越吃記憶體，只有整個關掉才會降下來。
 - Codex 的 thread 關掉或封存了，它的 MCP server 還在跑。
+- 同一個跑很久的 Codex 任務裡，每一輪都又多出一整套同樣的 server。
 - 關掉 Claude Code 的 session（終端機或 VS Code 分頁）之後，MCP server 還留著。
 
 寫這個工具的那台電腦上，ChatGPT 桌面版累積了 11 份：11 個 Playwright、其他每個也各 11 個，
 最多 5.6 GB，全部閒置。上游也有人回報同樣的問題：
 [openai/codex#30408](https://github.com/openai/codex/issues/30408)（每個 thread 的 MCP 程序都沒被清掉）、
 [#35485](https://github.com/openai/codex/issues/35485)（Windows 上每個 thread 一個 `node_repl.exe`）、
-[#38754](https://github.com/openai/codex/issues/38754)，Claude Code 則有過
+[#38754](https://github.com/openai/codex/issues/38754)（任務的每一輪都重開一套 server），Claude Code 則有過
 [anthropics/claude-code#24649](https://github.com/anthropics/claude-code/issues/24649)。
 
 ## 用法
@@ -98,6 +99,10 @@ Stopped 8 servers, 1.0 GB.
 所以它的 session 在每個地方（終端機、VS Code、Claude app）只保留你最後用的那一個。
 搭配 `--idle` 再加上 `--include-latest` 才會一起關。
 
+如果 agent 在舊的還在跑的時候，又替同一個對話把 server 重開一次（Codex 在某些任務的每一輪都會這樣），
+每個 server 只保留最新的那一份。舊的會標成 `(replaced)`：agent 已經不會再跟它們溝通，
+所以不管對話多忙，閒置時間都從被取代的那一刻算起。
+
 ### MCP 被關掉之後，對話會怎樣
 
 | Agent | MCP 被關掉之後 |
@@ -131,6 +136,10 @@ Start-Process -WindowStyle Minimized mcp-janitor 'watch --idle 1h'   # Windows
 **Codex 或 ChatGPT 桌面版一直開 MCP 程序、吃記憶體，要怎麼清掉？** 執行 `mcp-janitor stop --idle 1h`。
 它會列出閒置一小時以上的對話的 MCP server，問過你才關。每個 Codex 程序裡你最後用的那個對話會保留。
 想讓它一直幫你清，就執行 `mcp-janitor watch --idle 1h`。
+
+**Codex 在一個長任務的每一輪都把 MCP server 全部重開，舊的那些會被清掉嗎？** 會。
+每個 server 只保留最新的那一份，舊的在清單上標 `(replaced)`；`mcp-janitor stop --idle 10m`
+會關掉被取代十分鐘以上的那些，任務還在跑也一樣。
 
 **Claude Code 或其他 agent 結束後留下的孤兒 MCP server，要怎麼關？** 執行 `mcp-janitor stop --orphans`。
 它會關掉之前檢查時看過、當時還跟著 agent 的 server。只是「看起來」被留下的程序會分開列出，
@@ -177,7 +186,8 @@ mcp-janitor 只關 MCP server。agent 被要求清理時，穩妥的做法是：
 | `agentPid` | 啟動它的 agent 程序；孤兒是 `null` |
 | `pid`、`processes` | server 的 PID，以及它和它啟動的所有程序的 PID |
 | `orphan`、`confirmed` | 它的 agent 已經結束；之前檢查時看過它跟著 agent |
-| `latest` | 它屬於最後用的那個對話，會被保留 |
+| `latest` | 它是最後用的那個對話裡、這個 server 最新的一份，會被保留 |
+| `replaced` | 同一個對話裡有這個 server 更新的一份在跑，agent 已經不用這一份了 |
 | `conversation` | `{ id, title, busy }`，不知道時是 `null` |
 | `memoryBytes` | server 和它啟動的程序的工作集 |
 | `idleMs`、`measured`、`lastUsed` | 閒置時間（還不知道時是 `null`）、是否和之前的檢查比對過、最後一次被用到的時間 |
@@ -201,7 +211,7 @@ Codex 的 thread ID 是 UUIDv7，本身帶有建立時間，重新打開舊對�
 Claude Desktop 則是所有對話共用同一份 server。
 
 **怎麼算閒置多久。** agent 只會在處理對話的時候呼叫 MCP，所以對話最後一次有動靜之後，
-它的 server 不可能再被用到。mcp-janitor 也會在每次檢查之間記錄 server 有沒有用到 CPU 或做 I/O。
+它的 server 不可能再被用到；被更新的一份取代之後也一樣。mcp-janitor 也會在每次檢查之間記錄 server 有沒有用到 CPU 或做 I/O。
 閒置時間從兩者中較晚的那個算起，也就是兩邊都沒動靜才算閒置。
 server 操控的瀏覽器（Playwright、Puppeteer）在背景的動作不算 server 在忙。
 從沒看過、也對不到對話的 server 會顯示 `–`，下次檢查才有數字。

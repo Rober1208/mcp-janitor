@@ -201,7 +201,7 @@ function conversationLabel(copy) {
 }
 
 function idleLabel(copy) {
-  if (copy.conversation?.busy) return 'in use now';
+  if (copy.conversation?.busy && !copy.replaced) return 'in use now';
   if (copy.idleMs === null) return '–';
   if (copy.idleMs < 60000) return 'active';
   return `idle ${formatDuration(copy.idleMs)}`;
@@ -239,13 +239,14 @@ export function render(copies, { color = false, numbered = false } = {}) {
       conversations.get(id).copies.push(copy);
     }
     for (const { label, copies: members } of conversations.values()) {
-      const kept = members.every(copy => copy.latest) && olderInGroup.has(latestGroup(members[0]));
+      const current = members.filter(copy => !copy.replaced);
+      const kept = current.length > 0 && current.every(copy => copy.latest) && olderInGroup.has(latestGroup(members[0]));
       if (label) lines.push(`  ${truncate(label, 70)}${kept ? s.dim('  (latest)') : ''}`);
       for (const copy of members) {
         numbers.set(++number, copy);
         const prefix = numbered ? `${String(number).padStart(3)}  ` : '    ';
         const idle = idleLabel(copy);
-        lines.push(`  ${prefix}${copy.name}${' '.repeat(nameWidth - width(copy.name))}  ${formatBytes(copy.memoryBytes).padStart(7)}  ${(idle.startsWith('idle') ? s.yellow : String)(idle.padEnd(12))}  ${s.dim(`pid ${copy.root.pid}`)}`);
+        lines.push(`  ${prefix}${copy.name}${' '.repeat(nameWidth - width(copy.name))}  ${formatBytes(copy.memoryBytes).padStart(7)}  ${(idle.startsWith('idle') ? s.yellow : String)(idle.padEnd(12))}  ${s.dim(`pid ${copy.root.pid}${copy.replaced ? '  (replaced)' : ''}`)}`);
       }
     }
     lines.push('');
@@ -374,7 +375,7 @@ async function listCommand(options, io) {
   const copies = filtered(await check({ env: io.env }), options);
   if (options.json) {
     io.stdout.write(`${JSON.stringify(copies.map(copy => ({
-      name: copy.name, agent: copy.agent, host: copy.host, agentPid: copy.agentPid, orphan: copy.orphan, confirmed: copy.confirmed, latest: copy.latest,
+      name: copy.name, agent: copy.agent, host: copy.host, agentPid: copy.agentPid, orphan: copy.orphan, confirmed: copy.confirmed, latest: copy.latest, replaced: copy.replaced,
       pid: copy.root.pid, processes: copy.processes.map(p => p.pid), started: new Date(copy.start).toISOString(), memoryBytes: copy.memoryBytes,
       idleMs: copy.idleMs, measured: copy.measured, lastUsed: copy.lastUsed === null ? null : new Date(copy.lastUsed).toISOString(),
       conversation: copy.conversation && { id: copy.conversation.id, title: copy.conversation.title, busy: copy.conversation.busy },

@@ -109,6 +109,21 @@ test('the list groups servers by agent and conversation', () => {
   assert.equal(numbers.get(4).root.pid, 61);
 });
 
+test('a copy replaced by a newer one is marked, in a conversation still kept', () => {
+  const task = { id: 't', title: 'Long task', busy: true };
+  const { lines } = render([
+    copy('playwright', 41, { conversation: task, replaced: true, idleMs: 45 * 60000 }),
+    copy('playwright', 61, { conversation: task, latest: true, idleMs: 0 }),
+  ]);
+  assert.deepEqual(lines, [
+    'Codex in ChatGPT app (pid 30): 2 servers, 200 MB',
+    '  "Long task"  (latest)',
+    '      playwright   100 MB  idle 45m      pid 41  (replaced)',
+    '      playwright   100 MB  in use now    pid 61',
+    '',
+  ]);
+});
+
 function io(env = {}) {
   const stdout = new PassThrough();
   const stderr = new PassThrough();
