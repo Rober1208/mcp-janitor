@@ -26,7 +26,7 @@ set for every session in the same way. Upstream, this is
 [anthropics/claude-code#24649](https://github.com/anthropics/claude-code/issues/24649).
 
 ```bash
-npx github:Rober1208/mcp-janitor#v0.1.1
+npx github:Rober1208/mcp-janitor#v0.1.2
 ```
 
 No dependencies, nothing to configure: it reads the MCP settings your agents
@@ -35,7 +35,7 @@ already have. Works on Windows, Linux (including WSL) and macOS with Node.js
 To have the `mcp-janitor` command at hand:
 
 ```bash
-npm install -g github:Rober1208/mcp-janitor#v0.1.1
+npm install -g github:Rober1208/mcp-janitor#v0.1.2
 ```
 
 ## Usage

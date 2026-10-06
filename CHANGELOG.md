@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.1.2
 
 - An option that would do nothing is an error now, instead of being ignored:
   `--every` goes with `watch`, `--json` with the list, `--include-latest`

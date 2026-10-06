@@ -22,7 +22,7 @@ Codex 每開一個對話，就把你設定的 MCP server 全部再啟動一份�
 [anthropics/claude-code#24649](https://github.com/anthropics/claude-code/issues/24649)。
 
 ```bash
-npx github:Rober1208/mcp-janitor#v0.1.1
+npx github:Rober1208/mcp-janitor#v0.1.2
 ```
 
 沒有相依套件、不用設定：它直接讀各個 agent 本來就有的 MCP 設定。
@@ -30,7 +30,7 @@ npx github:Rober1208/mcp-janitor#v0.1.1
 想隨時直接打 `mcp-janitor`：
 
 ```bash
-npm install -g github:Rober1208/mcp-janitor#v0.1.1
+npm install -g github:Rober1208/mcp-janitor#v0.1.2
 ```
 
 ## 用法
