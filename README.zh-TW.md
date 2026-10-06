@@ -15,8 +15,8 @@ server 還可能在 agent 結束後被留下（孤兒程序）。結果就是 MC
 mcp-janitor 支援 Codex、Claude Code、Claude Desktop、Cursor、VS Code 和 Gemini CLI，你正在用的對話不會被動到。
 
 ```bash
-npx github:Rober1208/mcp-janitor#v0.1.2                  # 列出來
-npx github:Rober1208/mcp-janitor#v0.1.2 stop --idle 1h   # 關掉閒置一小時以上的
+npx github:Rober1208/mcp-janitor#v0.1.3                  # 列出來
+npx github:Rober1208/mcp-janitor#v0.1.3 stop --idle 1h   # 關掉閒置一小時以上的
 ```
 
 它只負責清理，不會改變 agent 啟動 MCP 的方式。支援 Windows、macOS、Linux（含 WSL），
@@ -25,7 +25,7 @@ npx github:Rober1208/mcp-janitor#v0.1.2 stop --idle 1h   # 關掉閒置一小時
 或這樣安裝 `mcp-janitor` 指令：
 
 ```bash
-npm install -g github:Rober1208/mcp-janitor#v0.1.2
+npm install -g github:Rober1208/mcp-janitor#v0.1.3
 ```
 
 ![mcp-janitor 列出三個 Codex 對話的 MCP，並關掉閒置的那些](docs/demo.png)
@@ -160,9 +160,9 @@ Start-Process -WindowStyle Minimized mcp-janitor 'watch --idle 1h'   # Windows
 依名稱結束程序（`taskkill /im node.exe`、`pkill node`）會連使用者其他的 Node.js 程式一起關掉，也可能關掉 agent 自己；
 mcp-janitor 只關 MCP server。agent 被要求清理時，穩妥的做法是：
 
-1. 列出 server：`npx -y github:Rober1208/mcp-janitor#v0.1.2 --json`
+1. 列出 server：`npx -y github:Rober1208/mcp-janitor#v0.1.3 --json`
 2. 看會關掉哪些，並給使用者看：
-   `npx -y github:Rober1208/mcp-janitor#v0.1.2 stop --idle 1h --dry-run`
+   `npx -y github:Rober1208/mcp-janitor#v0.1.3 stop --idle 1h --dry-run`
 3. 使用者同意後：把 `--dry-run` 換成 `--yes` 再執行一次；或用 `stop <pid> <pid> --yes` 關掉使用者挑的那幾個。
 
 不加 `--include-latest` 時，最後用的那些對話會保留它們的 server，agent 自己所在的對話可能就在其中。

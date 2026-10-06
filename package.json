@@ -1,6 +1,6 @@
 {
   "name": "mcp-janitor",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Find and stop the idle or orphaned MCP server processes (node.exe, node_repl, Playwright) that Codex, the ChatGPT desktop app, Claude Code, Claude Desktop, Cursor and VS Code leave running, per conversation, by hand or automatically.",
   "type": "module",
   "bin": {

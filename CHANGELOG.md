@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.1.3
 
 - In the conversation you used last, only the newest copy of each server is
   kept. When an agent starts a conversation's servers again while the old

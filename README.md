@@ -21,8 +21,8 @@ Claude Desktop, Cursor, VS Code and Gemini CLI, and the conversation you are
 using keeps its servers.
 
 ```bash
-npx github:Rober1208/mcp-janitor#v0.1.2                  # list them
-npx github:Rober1208/mcp-janitor#v0.1.2 stop --idle 1h   # stop those idle for an hour
+npx github:Rober1208/mcp-janitor#v0.1.3                  # list them
+npx github:Rober1208/mcp-janitor#v0.1.3 stop --idle 1h   # stop those idle for an hour
 ```
 
 It cleans up after the agents; it does not change how they start servers.
@@ -33,7 +33,7 @@ mcp-janitor is not on npm; run it from GitHub as above, or install the
 `mcp-janitor` command with:
 
 ```bash
-npm install -g github:Rober1208/mcp-janitor#v0.1.2
+npm install -g github:Rober1208/mcp-janitor#v0.1.3
 ```
 
 ![mcp-janitor listing three Codex conversations and stopping the idle ones](docs/demo.png)
@@ -191,9 +191,9 @@ Ending processes by name (`taskkill /im node.exe`, `pkill node`) also stops
 the user's other Node.js programs, and possibly the agent itself; mcp-janitor
 stops only MCP servers. A careful sequence for an agent asked to clean up:
 
-1. List the servers: `npx -y github:Rober1208/mcp-janitor#v0.1.2 --json`
+1. List the servers: `npx -y github:Rober1208/mcp-janitor#v0.1.3 --json`
 2. See what would be stopped, and show the user:
-   `npx -y github:Rober1208/mcp-janitor#v0.1.2 stop --idle 1h --dry-run`
+   `npx -y github:Rober1208/mcp-janitor#v0.1.3 stop --idle 1h --dry-run`
 3. Once the user agrees: the same with `--yes` instead of `--dry-run`, or
    `stop <pid> <pid> --yes` for the servers the user picked.
 
