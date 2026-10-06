@@ -132,10 +132,18 @@ function living(targets) {
   return targets.filter(target => Math.abs((current.get(target.pid)?.start ?? -Infinity) - target.start) < 1000);
 }
 
+// Whether a PID is in use, by anyone; a process we may not signal is there too.
+// Far cheaper than a snapshot, which on Windows can take seconds.
+function exists(pid) {
+  try { process.kill(pid, 0); return true; } catch (error) { return error.code === 'EPERM'; }
+}
+
 /**
  * Stop processes, given as { pid, start } from a snapshot. Each one is
  * checked against a fresh snapshot right before it is signaled. POSIX
- * processes get SIGTERM first and SIGKILL after a grace period.
+ * processes get SIGTERM first and SIGKILL after a grace period. Waiting only
+ * asks whether the PIDs are gone; a snapshot is taken only for those that
+ * are not, to tell them from new processes with the same PID.
  */
 export async function stopProcesses(targets, { graceMs = 3000 } = {}) {
   const signal = (list, name) => {
@@ -148,11 +156,12 @@ export async function stopProcesses(targets, { graceMs = 3000 } = {}) {
     signal(remaining, 'SIGTERM');
     for (const end = Date.now() + graceMs; remaining.length && Date.now() < end;) {
       await delay(200);
-      remaining = living(remaining);
+      remaining = remaining.filter(target => exists(target.pid));
     }
-    signal(living(remaining), 'SIGKILL');
+    if (remaining.length) signal(living(remaining), 'SIGKILL');
   }
   await delay(300);
-  const failed = living(targets);
+  const answering = targets.filter(target => exists(target.pid));
+  const failed = answering.length ? living(answering) : [];
   return { stopped: targets.length - failed.length, failed };
 }

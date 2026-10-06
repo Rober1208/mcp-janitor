@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+- An option that would do nothing is an error now, instead of being ignored:
+  `--every` goes with `watch`, `--json` with the list, `--include-latest`
+  with `--idle`, and PIDs with `stop`, without `--idle`, `--orphans`,
+  `--server` or `--agent`. `mcp-janitor 4180` says to use
+  `mcp-janitor stop 4180`.
+- Stopping takes one look at the process list fewer: waiting for servers to
+  exit only asks whether their PIDs are gone. This saves about half a second
+  on Windows, and on Linux and macOS no longer reads the whole process list five
+  times a second while a server takes its time to exit.
+
 ## 0.1.1
 
 First release.

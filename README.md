@@ -52,16 +52,17 @@ mcp-janitor doctor             # check what it can read on this machine
 
 With `--idle` or `--orphans`, `stop` lists what it is about to stop and asks
 first; add `--yes` to skip the question in scripts, or `--dry-run` to only
-look. Narrow any command with `--server playwright` or `--agent` followed by
-`codex`, `"claude code"`, `"claude desktop"`, `cursor`, `vscode` or `gemini`.
+look. Narrow the list, `stop` or `watch` with `--server playwright` or
+`--agent` followed by `codex`, `"claude code"`, `"claude desktop"`, `cursor`,
+`vscode` or `gemini`.
 
 **Your current conversation is safe by default.** Each Codex process (the
 ChatGPT app, a Codex terminal, a VS Code window) keeps the servers of the
 conversation you used last, even when idle, because you may come back to it
 any minute and Codex cannot start a stopped server again. Claude Code can
 (from `/mcp`), so among its sessions only the one you used last in each place
-(terminals, VS Code, the Claude app) is kept. Add `--include-latest` to stop
-those too.
+(terminals, VS Code, the Claude app) is kept. With `--idle`, add
+`--include-latest` to stop those too.
 
 ### What happens to a conversation whose servers you stop
 

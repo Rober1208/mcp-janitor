@@ -23,19 +23,33 @@ test('durations', () => {
 
 test('arguments', () => {
   assert.deepEqual(parseArgs([]), { command: 'list', pids: [], everyMs: 60000 });
-  const stop = parseArgs(['stop', '--idle=1h', '--agent', 'codex', '--include-latest', '-y', '123', '456']);
+  const stop = parseArgs(['stop', '--idle=1h', '--agent', 'codex', '--include-latest', '-y']);
   assert.equal(stop.command, 'stop');
   assert.equal(stop.idleMs, 3600000);
   assert.equal(stop.agent, 'codex');
   assert.equal(stop['include-latest'], true);
   assert.equal(stop.yes, true);
-  assert.deepEqual(stop.pids, [123, 456]);
+  assert.deepEqual(parseArgs(['stop', '123', '-y', '456']).pids, [123, 456]);
   assert.equal(parseArgs(['watch', '--idle', '30m', '--every', '10s']).everyMs, 10000);
   assert.equal(parseArgs(['doctor']).command, 'doctor');
   assert.throws(() => parseArgs(['--bogus']), /Unknown option --bogus/);
   assert.throws(() => parseArgs(['--idle']), /--idle needs a value/);
-  assert.throws(() => parseArgs(['list', '123']), /Unexpected argument 123/);
+  assert.throws(() => parseArgs(['list', '123']), /PIDs go with stop, as in: mcp-janitor stop 123/);
+  assert.throws(() => parseArgs(['4180']), /PIDs go with stop/);
   assert.throws(() => parseArgs(['--json', 'stop']), /Unexpected argument stop/);
+  // An option that would do nothing is a mistake.
+  assert.throws(() => parseArgs(['--every', '5m']), /--every goes with watch, not list/);
+  assert.throws(() => parseArgs(['stop', '--json']), /--json goes with list, not stop/);
+  assert.throws(() => parseArgs(['doctor', '--agent', 'codex']), /--agent goes with list, stop or watch, not doctor/);
+  assert.throws(() => parseArgs(['--dry-run']), /--dry-run goes with stop or watch, not list/);
+  assert.throws(() => parseArgs(['stop', '--include-latest']), /--include-latest goes with --idle/);
+  assert.throws(() => parseArgs(['watch', '--include-latest']), /--include-latest goes with --idle/);
+  assert.throws(() => parseArgs(['stop', '123', '--idle', '1h']), /Give either PIDs or --idle, not both/);
+  assert.throws(() => parseArgs(['stop', '123', '--agent', 'codex']), /Give either PIDs or --agent, not both/);
+  assert.equal(parseArgs(['stop', '123', '--dry-run', '--yes']).pids[0], 123);
+  assert.equal(parseArgs(['--orphans', '--json', '--server', 'playwright']).orphans, true);
+  assert.equal(parseArgs(['watch', '--idle', '1h', '--yes']).yes, true);
+  assert.equal(parseArgs(['doctor', '--help']).help, true);
   assert.throws(() => parseArgs(['watch', '--every', '1s']), /at least 5s/);
   assert.throws(() => parseArgs(['--yes=1']), /Unknown option/);
   // Agents by their whole name: "code" is not Codex, and "claude" is two agents.
@@ -114,7 +128,7 @@ test('help, version and mistakes', async () => {
   assert.match(version.out, /^\d+\.\d+\.\d+\n$/);
   const wrong = io();
   assert.equal(await main(['--idle', '1h'], wrong), 2);
-  assert.match(wrong.err, /go with stop or watch/);
+  assert.match(wrong.err, /--idle goes with stop or watch, not list/);
   const bad = io();
   assert.equal(await main(['stop', '--idle', 'soon'], bad), 2);
   assert.match(bad.err, /--idle must be a time/);

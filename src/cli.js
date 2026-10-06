@@ -23,7 +23,7 @@ Options:
   --orphans           Only servers seen with an agent that has since exited
   --server <name>     Only servers with this name
   --agent <name>      Only servers of this agent, such as codex or "claude code"
-  --include-latest    Also stop servers of the conversations you used last
+  --include-latest    With --idle, also stop servers of the conversations you used last
   --every <time>      How often watch checks (default 1m)
   --dry-run           Show what would be stopped, and stop nothing
   -y, --yes           Do not ask before stopping
@@ -40,6 +40,17 @@ reconnects a stopped server.
 const VALUE_OPTIONS = new Set(['idle', 'server', 'agent', 'every']);
 const FLAGS = new Set(['orphans', 'include-latest', 'dry-run', 'yes', 'json', 'help', 'version']);
 const SHORT = { y: 'yes', h: 'help', v: 'version' };
+// The options each command takes; --help and --version go with any. An
+// option that would do nothing is more likely a mistake than a wish.
+const COMMAND_OPTIONS = {
+  list: ['orphans', 'server', 'agent', 'json'],
+  stop: ['idle', 'orphans', 'server', 'agent', 'include-latest', 'dry-run', 'yes'],
+  watch: ['idle', 'every', 'orphans', 'server', 'agent', 'include-latest', 'dry-run', 'yes'],
+  doctor: [],
+};
+// Options that choose servers, which PIDs already do.
+const CHOOSING = ['idle', 'orphans', 'server', 'agent', 'include-latest'];
+const either = words => (words.length > 1 ? `${words.slice(0, -1).join(', ')} or ${words.at(-1)}` : words[0]);
 
 export function parseArgs(argv) {
   const options = { command: 'list', pids: [] };
@@ -60,14 +71,23 @@ export function parseArgs(argv) {
       options[SHORT[arg[1]]] = true;
     } else if (arg.startsWith('-')) {
       throw new UsageError(`Unknown option ${arg}.`);
-    } else if (/^\d+$/.test(arg) && options.command === 'stop') {
+    } else if (/^\d+$/.test(arg)) {
+      if (options.command !== 'stop') throw new UsageError(`PIDs go with stop, as in: mcp-janitor stop ${arg}`);
       options.pids.push(Number(arg));
-    } else if (i === 0 && ['list', 'stop', 'watch', 'doctor'].includes(arg)) {
+    } else if (i === 0 && Object.hasOwn(COMMAND_OPTIONS, arg)) {
       options.command = arg;
     } else {
       throw new UsageError(`Unexpected argument ${arg}.`);
     }
   }
+  for (const name of [...VALUE_OPTIONS, ...FLAGS]) {
+    if (options[name] === undefined || name === 'help' || name === 'version' || COMMAND_OPTIONS[options.command].includes(name)) continue;
+    const commands = Object.keys(COMMAND_OPTIONS).filter(command => COMMAND_OPTIONS[command].includes(name));
+    throw new UsageError(`--${name} goes with ${either(commands)}, not ${options.command}.`);
+  }
+  const choosing = options.pids.length ? CHOOSING.find(name => options[name] !== undefined) : undefined;
+  if (choosing) throw new UsageError(`Give either PIDs or --${choosing}, not both.`);
+  if (options['include-latest'] && options.idle === undefined) throw new UsageError('--include-latest goes with --idle.');
   if (options.agent !== undefined) agentNamed(options.agent);
   if (options.idle !== undefined) options.idleMs = parseDuration(options.idle, '--idle');
   options.everyMs = options.every === undefined ? 60000 : parseDuration(options.every, '--every');
@@ -458,7 +478,6 @@ export async function main(argv, io = { stdin: process.stdin, stdout: process.st
     if (options.command === 'doctor') return await doctorCommand(options, io);
     if (options.command === 'stop') return await stopCommand(options, io);
     if (options.command === 'watch') return await watchCommand(options, io);
-    if (options.pids.length || options.idleMs !== undefined) throw new UsageError('--idle and PIDs go with stop or watch.');
     return await listCommand(options, io);
   } catch (error) {
     if (error instanceof UsageError) {
