@@ -46,13 +46,13 @@ mcp-janitor doctor             # 檢查它在這台電腦上讀得到哪些資�
 ```
 
 用 `--idle` 或 `--orphans` 時，`stop` 會先列出要關的項目並詢問；在腳本裡可加 `--yes` 跳過詢問，
-或用 `--dry-run` 只看不關。任何指令都能用 `--server playwright` 縮小範圍，或用 `--agent` 加上
+或用 `--dry-run` 只看不關。列表、`stop`、`watch` 都能用 `--server playwright` 縮小範圍，或用 `--agent` 加上
 `codex`、`"claude code"`、`"claude desktop"`、`cursor`、`vscode`、`gemini` 其中之一。
 
 **預設不會動到你正在用的對話。** 每個 Codex 程序（ChatGPT app、一個 Codex 終端機、一個 VS Code 視窗）
 都會保留你最後用的那個對話的 MCP，即使閒置也一樣，因為你可能隨時回來繼續，而 Codex 沒辦法重新啟動被關掉的 MCP。
 Claude Code 可以（在 `/mcp` 重新連線），所以它的 session 在每個地方（終端機、VS Code、Claude app）只保留你最後用的那一個。
-加上 `--include-latest` 才會一起關。
+搭配 `--idle` 再加上 `--include-latest` 才會一起關。
 
 ### MCP 被關掉之後，對話會怎樣
 
