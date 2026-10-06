@@ -121,7 +121,7 @@ test('without conversations, the servers started last are the latest; orphans ne
 });
 
 test('the latest conversation is the one most recently active in each app', () => {
-  const copy = (pid, agent, host, agentPid, start, conversation) => ({ root: { pid }, agent, host, agentPid, start, orphan: false, conversation });
+  const copy = (pid, agent, host, agentPid, start, conversation) => ({ root: { pid }, name: `server${pid}`, agent, host, agentPid, start, orphan: false, conversation });
   const now = 1000000;
   const copies = markLatest([
     // Codex in the ChatGPT app: the older conversation was used more recently.
@@ -140,6 +140,30 @@ test('the latest conversation is the one most recently active in each app', () =
     copy(9, 'Codex', null, 61, 100, { id: 'g', lastActivity: 900000 }),
   ], now);
   assert.deepEqual(copies.map(c => c.latest), [true, false, true, false, true, true, true, true, true]);
+  assert.ok(copies.every(c => !c.replaced));
+});
+
+test('in a conversation whose servers were started again, only the newest copy of each is kept', () => {
+  const copy = (pid, name, agentPid, start, conversation) => ({ root: { pid }, name, agent: 'Codex', host: 'ChatGPT app', agentPid, start, orphan: false, conversation });
+  const task = { id: 't', lastActivity: 900000, busy: true };
+  const copies = markLatest([
+    // Codex started the task's servers again on each of three turns.
+    copy(1, 'playwright', 30, 1000, task), copy(2, 'node_repl', 30, 1100, task),
+    copy(3, 'playwright', 30, 60000, task), copy(4, 'node_repl', 30, 60100, task),
+    copy(5, 'playwright', 30, 120000, task), copy(6, 'node_repl', 30, 120100, task),
+    // Two servers of the same name started together: neither replaces the other.
+    copy(7, 'code-review', 30, 120200, task), copy(8, 'code-review', 30, 120300, task),
+    // The same conversation in another Codex process has copies of its own.
+    copy(9, 'playwright', 31, 1000, task),
+    // An older conversation of the first process.
+    copy(10, 'playwright', 30, 500, { id: 'old', lastActivity: 600 }),
+  ], 1000000);
+  const state = Object.fromEntries(copies.map(c => [c.root.pid, [c.latest, c.replacedAt]]));
+  assert.deepEqual(state, {
+    1: [false, 60000], 2: [false, 60100], 3: [false, 120000], 4: [false, 120100],
+    5: [true, null], 6: [true, null], 7: [true, null], 8: [true, null],
+    9: [true, null], 10: [false, null],
+  });
 });
 
 test('only your own processes count', () => {

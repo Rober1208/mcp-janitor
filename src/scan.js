@@ -195,6 +195,9 @@ export function findCopies(processes, servers, { extraAgents = null, platform = 
  * its sessions compete per app: only the session used last in a terminal, in
  * VS Code or in the Claude app is kept.
  */
+// Servers an agent starts within this long of each other were started together.
+const SET_MS = 5000;
+
 export const latestGroup = copy => (copy.agent === 'Claude Code'
   ? `${copy.agent}|${copy.host ?? ''}` : `${copy.agent}|${copy.host ?? ''}|${copy.agentPid}`);
 
@@ -204,18 +207,25 @@ export const latestGroup = copy => (copy.agent === 'Claude Code'
  * known conversation, the servers an agent started together count as one;
  * Claude Desktop shares its servers with all its conversations. Orphans are
  * never the latest.
+ *
+ * An agent can start a conversation's servers again while the old copies
+ * keep running (Codex does on every turn of some tasks). It talks only to
+ * the newest copy of each server, so an older one is marked replaced, with
+ * replacedAt the moment the agent moved on, and is not the latest.
  */
 export function markLatest(copies, now = Date.now()) {
   const conversations = new Map();
   const sets = [];
   for (const copy of [...copies].sort((a, b) => a.start - b.start)) {
     copy.latest = false;
+    copy.replaced = false;
+    copy.replacedAt = null;
     if (copy.orphan) continue;
     let key;
     if (copy.agent === 'Claude Desktop') key = `app:${copy.agentPid}`;
     else if (copy.conversation?.id) key = `conversation:${copy.conversation.id}`;
     else {
-      let set = sets.find(s => s.agentPid === copy.agentPid && copy.start - s.start <= 5000);
+      let set = sets.find(s => s.agentPid === copy.agentPid && copy.start - s.start <= SET_MS);
       if (!set) sets.unshift(set = { agentPid: copy.agentPid, start: copy.start, key: `set:${copy.agentPid}:${copy.start}` });
       key = set.key;
     }
@@ -224,10 +234,22 @@ export function markLatest(copies, now = Date.now()) {
     entry.copies.push(copy);
     conversations.set(key, entry);
   }
+  // Copies of one server that start together belong to one set; a later set
+  // replaces it. The same conversation open in two agent processes is two
+  // conversations to talk to.
+  for (const entry of conversations.values()) {
+    for (const copy of entry.copies) {
+      const newer = entry.copies.filter(other => other.name === copy.name && other.agentPid === copy.agentPid && other.start - copy.start > SET_MS);
+      if (newer.length) {
+        copy.replaced = true;
+        copy.replacedAt = Math.min(...newer.map(other => other.start));
+      }
+    }
+  }
   const latest = new Map();
   for (const entry of conversations.values()) {
     if (!latest.has(entry.app) || latest.get(entry.app).recency < entry.recency) latest.set(entry.app, entry);
   }
-  for (const entry of latest.values()) for (const copy of entry.copies) copy.latest = true;
+  for (const entry of latest.values()) for (const copy of entry.copies) copy.latest = !copy.replaced;
   return copies;
 }

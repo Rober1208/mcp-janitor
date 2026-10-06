@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+- In the conversation you used last, only the newest copy of each server is
+  kept. When an agent starts a conversation's servers again while the old
+  copies keep running, as Codex does on every turn of some tasks
+  ([openai/codex#38754](https://github.com/openai/codex/issues/38754)), the
+  old copies are listed as `(replaced)`, count as idle from the moment they
+  were replaced however busy the conversation is, and `stop --idle` and
+  `watch` stop them. `--json` has a new `replaced` field.
+
 ## 0.1.2
 
 - An option that would do nothing is an error now, instead of being ignored:
