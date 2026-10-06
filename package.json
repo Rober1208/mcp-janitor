@@ -1,7 +1,7 @@
 {
   "name": "mcp-janitor",
   "version": "0.1.2",
-  "description": "See which MCP servers your AI agents (Codex, Claude Code, Claude Desktop, Cursor, VS Code) keep running, per conversation, and stop the idle ones.",
+  "description": "Find and stop the idle or orphaned MCP server processes (node.exe, node_repl, Playwright) that Codex, the ChatGPT desktop app, Claude Code, Claude Desktop, Cursor and VS Code leave running, per conversation, by hand or automatically.",
   "type": "module",
   "bin": {
     "mcp-janitor": "bin/mcp-janitor.js"
@@ -26,7 +26,13 @@
     "ai-agents",
     "memory",
     "process-manager",
-    "cli"
+    "cli",
+    "chatgpt",
+    "gemini-cli",
+    "vscode",
+    "playwright",
+    "orphan-processes",
+    "memory-leak"
   ],
   "repository": {
     "type": "git",

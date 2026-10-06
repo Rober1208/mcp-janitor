@@ -1,13 +1,40 @@
 # mcp-janitor
 
+Find and stop the idle or orphaned MCP server processes that Codex, the
+ChatGPT desktop app, Claude Code and other AI agents leave running. Codex
+starts a full set of your MCP servers for every conversation and keeps them
+until the app quits. mcp-janitor shows which conversation each one belongs to
+and how long it has been idle, then stops them by hand, or automatically once
+they idle too long.
+
 [![CI](https://github.com/Rober1208/mcp-janitor/actions/workflows/ci.yml/badge.svg)](https://github.com/Rober1208/mcp-janitor/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
 **English** · [繁體中文](README.zh-TW.md)
 
-See which MCP servers your AI agents keep running, which conversation each
-one belongs to and how long it has been idle. Then stop the ones you no
-longer need, or let mcp-janitor stop them once they idle too long.
+Codex does this in the CLI, the IDE extension and the ChatGPT desktop app
+alike, for every conversation, or thread. Claude Code starts a set for every
+session, and servers can outlive the agent that started them (orphans). They
+pile up as dozens of idle `node.exe`, `node_repl.exe`, Playwright and browser
+processes, and gigabytes of memory. mcp-janitor works with Codex, Claude Code,
+Claude Desktop, Cursor, VS Code and Gemini CLI, and the conversation you are
+using keeps its servers.
+
+```bash
+npx github:Rober1208/mcp-janitor#v0.1.2                  # list them
+npx github:Rober1208/mcp-janitor#v0.1.2 stop --idle 1h   # stop those idle for an hour
+```
+
+It cleans up after the agents; it does not change how they start servers.
+Windows, macOS and Linux (including WSL), Node.js 22 or later and Git, no
+dependencies, nothing to configure: it reads the MCP settings your agents
+already have. Naming Codex conversations takes Node.js 22.13 or later.
+mcp-janitor is not on npm; run it from GitHub as above, or install the
+`mcp-janitor` command with:
+
+```bash
+npm install -g github:Rober1208/mcp-janitor#v0.1.2
+```
 
 ![mcp-janitor listing three Codex conversations and stopping the idle ones](docs/demo.png)
 
@@ -15,28 +42,24 @@ longer need, or let mcp-janitor stop them once they idle too long.
 with three conversations opened two minutes apart. No model was called.
 [experiments/demo-codex.mjs](experiments/demo-codex.mjs) reproduces it.</sub>
 
-Codex starts a full set of your MCP servers for every conversation you open,
-and keeps all of them until the app quits. On the machine this tool was
-written on, the ChatGPT desktop app had collected 11 sets: 11 Playwright
-servers, 11 of everything else, up to 5.6 GB, all idle. Claude Code starts a
-set for every session in the same way. Upstream, this is
-[openai/codex#30408](https://github.com/openai/codex/issues/30408),
-[#35485](https://github.com/openai/codex/issues/35485) and
-[#38754](https://github.com/openai/codex/issues/38754); Claude Code had
-[anthropics/claude-code#24649](https://github.com/anthropics/claude-code/issues/24649).
+## Is this your problem?
 
-```bash
-npx github:Rober1208/mcp-janitor#v0.1.2
-```
+- Task Manager or Activity Monitor shows many `node.exe` or `node_repl.exe`
+  processes, or several copies of the same Playwright, `npx`, `uv` or Python
+  server, and there are more after every new Codex conversation.
+- The ChatGPT desktop app or Codex takes more memory the longer it runs, and
+  only quitting it gives the memory back.
+- Closing or archiving a Codex thread does not end its MCP servers.
+- MCP servers keep running after you close Claude Code sessions, in a
+  terminal or a VS Code tab.
 
-No dependencies, nothing to configure: it reads the MCP settings your agents
-already have. Works on Windows, Linux (including WSL) and macOS with Node.js
-22 or later and Git; naming Codex conversations takes Node.js 22.13 or later.
-To have the `mcp-janitor` command at hand:
-
-```bash
-npm install -g github:Rober1208/mcp-janitor#v0.1.2
-```
+On the machine this tool was written on, the ChatGPT desktop app had collected
+11 sets: 11 Playwright servers, 11 of everything else, up to 5.6 GB, all idle.
+Upstream, this is [openai/codex#30408](https://github.com/openai/codex/issues/30408)
+(MCP server processes never cleaned up per thread),
+[#35485](https://github.com/openai/codex/issues/35485) (one `node_repl.exe`
+per thread on Windows) and [#38754](https://github.com/openai/codex/issues/38754);
+Claude Code had [anthropics/claude-code#24649](https://github.com/anthropics/claude-code/issues/24649).
 
 ## Usage
 
@@ -50,18 +73,46 @@ mcp-janitor watch --idle 1h    # keep checking, stop servers once idle that long
 mcp-janitor doctor             # check what it can read on this machine
 ```
 
+The run in the picture above, as text:
+
+```text
+$ mcp-janitor
+Codex (pid 48448): 12 servers, 1.6 GB
+  "Fix the flaky login test"
+      node_repl     19 MB  idle 6m       pid 7344
+      playwright   191 MB  idle 6m       pid 17376
+      obsidian     168 MB  idle 6m       pid 9652
+      drawio       159 MB  idle 6m       pid 62432
+  "Refactor the billing API"
+      node_repl     18 MB  idle 4m       pid 16548
+      obsidian     167 MB  idle 4m       pid 34912
+      drawio       159 MB  idle 4m       pid 30028
+      playwright   190 MB  idle 4m       pid 38572
+  "Draft the 0.4 release notes"  (latest)
+      playwright   190 MB  idle 2m       pid 7856
+      drawio       158 MB  idle 2m       pid 58848
+      obsidian     168 MB  idle 2m       pid 5360
+      node_repl     18 MB  idle 2m       pid 6220
+
+Total: 12 servers, 1.6 GB.
+
+$ mcp-janitor stop --idle 3m --agent codex --yes
+Stopped 8 servers, 1.0 GB.
+```
+
 With `--idle` or `--orphans`, `stop` lists what it is about to stop and asks
 first; add `--yes` to skip the question in scripts, or `--dry-run` to only
 look. Narrow the list, `stop` or `watch` with `--server playwright` or
 `--agent` followed by `codex`, `"claude code"`, `"claude desktop"`, `cursor`,
-`vscode` or `gemini`.
+`vscode` or `gemini`. Stopping a server also stops every process it started,
+such as the browser a Playwright server drives.
 
 **Your current conversation is safe by default.** Each Codex process (the
 ChatGPT app, a Codex terminal, a VS Code window) keeps the servers of the
-conversation you used last, even when idle, because you may come back to it
-any minute and Codex cannot start a stopped server again. Claude Code can
-(from `/mcp`), so among its sessions only the one you used last in each place
-(terminals, VS Code, the Claude app) is kept. With `--idle`, add
+conversation you used last, marked `(latest)`, even when idle, because you may
+come back to it any minute and Codex cannot start a stopped server again.
+Claude Code can (from `/mcp`), so among its sessions only the one you used last
+in each place (terminals, VS Code, the Claude app) is kept. With `--idle`, add
 `--include-latest` to stop those too.
 
 ### What happens to a conversation whose servers you stop
@@ -72,7 +123,7 @@ any minute and Codex cannot start a stopped server again. Claude Code can
 | Claude Code | The server shows as failed in `/mcp`, where you can reconnect it. |
 | Claude Desktop | Restart the app to start the server again. |
 
-### Keep it running
+### Stop idle MCP servers automatically
 
 `watch` checks every minute (`--every` changes that) and logs what it stops:
 
@@ -92,6 +143,80 @@ nohup mcp-janitor watch --idle 1h > ~/mcp-janitor.log 2>&1 &   # Linux, macOS
 Start-Process -WindowStyle Minimized mcp-janitor 'watch --idle 1h'   # Windows
 ```
 
+## FAQ
+
+**How do I clean up the MCP processes that Codex or the ChatGPT desktop app
+keeps running?** Run `mcp-janitor stop --idle 1h`. It shows the servers of
+conversations idle for an hour or more and asks before stopping them. The
+conversation you used last in each Codex process keeps its servers. To keep
+doing it, run `mcp-janitor watch --idle 1h`.
+
+**How do I kill orphaned MCP servers left by Claude Code or another agent that
+exited?** Run `mcp-janitor stop --orphans`. It stops the servers it saw
+running under their agent at an earlier check. Processes that only look left
+behind are listed apart; stop one by its PID, such as `mcp-janitor stop 4180`.
+
+**Why not just end every `node.exe`?** Other programs run on Node.js too, and
+so may the agent you are talking to, and stopping the servers of the
+conversation you are in breaks its tools. mcp-janitor stops only processes
+that an agent started directly from its own MCP configuration.
+
+**Does it fix the leak in Codex?** No. It cleans up after it; the fix belongs
+upstream, in [openai/codex#30408](https://github.com/openai/codex/issues/30408).
+Until then, `watch --idle 1h` keeps the count down.
+
+**Does it send anything anywhere?** No. See [Privacy](#privacy).
+
+## For AI agents and scripts
+
+This section describes how mcp-janitor behaves when an AI agent or a script
+runs it, with no one at a terminal.
+
+Ending processes by name (`taskkill /im node.exe`, `pkill node`) also stops
+the user's other Node.js programs, and possibly the agent itself; mcp-janitor
+stops only MCP servers. A careful sequence for an agent asked to clean up:
+
+1. List the servers: `npx -y github:Rober1208/mcp-janitor#v0.1.2 --json`
+2. See what would be stopped, and show the user:
+   `npx -y github:Rober1208/mcp-janitor#v0.1.2 stop --idle 1h --dry-run`
+3. Once the user agrees: the same with `--yes` instead of `--dry-run`, or
+   `stop <pid> <pid> --yes` for the servers the user picked.
+
+Without `--include-latest`, the conversations used last keep their servers,
+and the agent's own conversation may be among them.
+
+- Without a terminal, `stop --idle` and `stop --orphans` need `--yes`, and
+  `stop` needs PIDs; otherwise it exits with 2 and stops nothing.
+- Exit codes: 0 when it did what was asked, including when there was nothing
+  to stop; 1 when a server could not be stopped (stderr names it), `doctor`
+  found a problem, or something else failed; 2 for a mistake on the command
+  line, such as a PID that is not in the list.
+- `stop` prints `Stopped 3 servers, 410 MB.` or `Nothing to stop.`. Only the
+  list takes `--json`; run it again afterwards to see what is left.
+- Idle time needs two looks. A server seen for the first time, with no
+  conversation to tell when it was last used, has `idleMs: null` and is not
+  stopped for being idle; `stop --idle` looks once more three seconds later.
+  Every list, `stop` and `watch` check, `--dry-run` included, records what it
+  saw in the state file (see [Privacy](#privacy)), so the next run knows more.
+- For unattended cleanup, `watch --idle 1h` works better than a nightly
+  `stop`. Install it once with `npm install -g` rather than fetching it with
+  `npx` on every run, and run it as the same user as the agents.
+
+`--json` prints a list with one object per server:
+
+| Field | Meaning |
+| --- | --- |
+| `name` | The server's name in the agent's configuration |
+| `agent`, `host` | The agent, such as `"Codex"`, and where it runs, such as `"ChatGPT app"` or `"VS Code"` (`null` when nothing more is known) |
+| `agentPid` | The agent process that started it; `null` for orphans |
+| `pid`, `processes` | The server's PID, and the PIDs of it and every process it started |
+| `orphan`, `confirmed` | Its agent has exited; it was seen with its agent at an earlier check |
+| `latest` | It belongs to the conversation used last, which keeps its servers |
+| `conversation` | `{ id, title, busy }`, or `null` when not known |
+| `memoryBytes` | Working set of the server and the processes it started |
+| `idleMs`, `measured`, `lastUsed` | Idle time (`null` until known), whether an earlier check was compared, when it was last used |
+| `started` | When the server started (ISO 8601) |
+
 ## How it works
 
 **Which processes are MCP servers.** mcp-janitor reads the MCP servers you
@@ -99,9 +224,9 @@ configured for each agent, then looks among your own processes (on a shared
 machine, other people's are left out) for ones that an agent started
 *directly* with one of the commands in its own configuration, word for word.
 Commands an agent runs for you usually go through a shell, and a shell is
-never taken for a server. Codex also starts plugin servers that no config
-file names; a process counts as one of them only when Codex started it in
-the same instant as the rest of that conversation's servers.
+never taken for a server. Codex also starts servers that no config file names,
+such as plugin servers; a process counts as one of them only when Codex
+started it in the same instant as the rest of that conversation's servers.
 
 **Orphans.** A server whose agent has exited is an orphan: nothing can talk
 to it anymore. mcp-janitor is sure of that when an earlier check saw the
@@ -110,12 +235,12 @@ server with its agent, and only those orphans are stopped by `--orphans`,
 configured server command and its parent is gone) is listed apart, and
 stopped only when you pick it or name its PID.
 
-**Which conversation started it.** Claude Code records the conversation each
-of its processes runs in `~/.claude/sessions/<pid>.json`. Codex thread IDs
-carry their creation time (they are UUIDv7), and Codex logs when it opens an
-old thread again; a set of servers belongs to the thread created or opened
-just before it started. Claude Desktop runs one copy of each server for all
-its conversations.
+**Which conversation (thread) started it.** Claude Code records the
+conversation each of its processes runs in `~/.claude/sessions/<pid>.json`.
+Codex thread IDs carry their creation time (they are UUIDv7), and Codex logs
+when it opens an old thread again; a set of servers belongs to the thread
+created or opened just before it started. Claude Desktop runs one copy of each
+server for all its conversations.
 
 **How long it has been idle.** An agent only calls MCP servers while it works
 on the conversation, so a server cannot have been used after its
@@ -133,8 +258,9 @@ memory) of the server and every process it started. Memory those processes
 share with others counts in each of them, so the totals are an upper bound.
 
 **Stopping.** Before it signals a process, mcp-janitor checks that the PID
-still belongs to the process it listed. On Linux and macOS a server gets
-SIGTERM, then SIGKILL after three seconds; on Windows it is terminated.
+still belongs to the process it listed. It stops the server and every process
+the server started. On Linux and macOS they get SIGTERM, then SIGKILL after
+three seconds; on Windows they are terminated.
 
 ## Agents
 
@@ -151,10 +277,11 @@ For any other agent, point `MCP_JANITOR_SERVERS` at a JSON file in the usual
 `{ "mcpServers": { ... } }` form, and `MCP_JANITOR_AGENTS` at a regular
 expression that matches the agent's command line.
 
-Tested so far: Codex in the ChatGPT desktop app on Windows 11, and the Codex
-app server 0.160, against real servers; the test suite runs real processes on
-Windows, Linux and macOS. Cursor, VS Code and Gemini CLI are read from their
-documented config files but have not been tried against a live install yet.
+Tested so far: Codex in the ChatGPT desktop app on Windows 11 and the Codex
+app server 0.160, against real servers, the bundled `node_repl` among them;
+the test suite runs real processes on Windows, Linux and macOS.
+Cursor, VS Code and Gemini CLI are read from their documented config files but
+have not been tried against a live install yet.
 
 Conversation names come from files the agents keep for themselves, and an
 agent update can change them. `mcp-janitor doctor` checks each source and says
