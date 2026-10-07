@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.4
+
+- On npm: `npx mcp-janitor`, or `npm install -g mcp-janitor`. Running it no
+  longer needs Git.
+
 ## 0.1.3
 
 - In the conversation you used last, only the newest copy of each server is
